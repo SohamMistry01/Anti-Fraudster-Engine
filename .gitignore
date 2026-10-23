@@ -1,0 +1,33 @@
+# Environments
+venv/
+.venv/
+env/
+.env
+
+# Large Datasets & Data Directory
+data/*.csv
+data/*.zip
+data/*.tar.gz
+data/creditcard.csv
+data/train_data.csv
+data/test_data.csv
+!data/.gitkeep
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Model Artifacts & Serialized Files
+*.pkl
+*.joblib
+
+# OS & Editor generated files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
