@@ -13,3 +13,6 @@ pip install -r requirements.txt
 # or install in editable mode
 pip install -e .
 ```
+
+## Dataset link
+https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud/data
