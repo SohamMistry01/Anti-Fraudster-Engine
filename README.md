@@ -165,9 +165,14 @@ fig = explanation["figure"]  # plotly.graph_objects.Figure
 
 ## 5. Unsupervised Anomaly Detection & Model Comparison
 
-The unsupervised `IsolationForestAnomalyDetector` ([`src/anomaly/detector.py`](file:///e:/Fraud-Detection/src/anomaly/detector.py)) normalizes decision scores to a bounded range $[0.0, 1.0]$:
+The unsupervised `IsolationForestAnomalyDetector` ([`src/anomaly/detector.py`](file:///e:/Fraud-Detection/src/anomaly/detector.py)) normalizes raw decision function scores into a calibrated anomaly index bounded in the range $[0.0, 1.0]$:
 
-$$\text{Anomaly Score} = 1.0 - \frac{\text{raw\_score} - \text{score}_{\min}}{\text{score}_{\max} - \text{score}_{\min}}$$
+$$\text{Anomaly Score} = 1.0 - \frac{s_{\text{raw}} - s_{\min}}{s_{\max} - s_{\min}}$$
+
+Where:
+- $s_{\text{raw}}$ is the raw Isolation Forest `decision_function` score (lower scores indicate deeper tree isolation and higher anomaly severity).
+- $s_{\min}$ and $s_{\max}$ are the calibration boundary extremes observed during validation.
+- The score is inverted so that **$0.0$ represents standard in-distribution behavior** and **$1.0$ represents an extreme population outlier**.
 
 ### Signal Concordance & Overlap Analysis
 
