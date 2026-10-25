@@ -360,9 +360,24 @@ with sim_col1:
 
     threshold_choice = st.selectbox(
         "Decision Threshold:",
-        ["default (0.500)", "cost_optimal (0.182)", "conservative (0.050)", "high_precision (0.850)"],
+        [
+            "cost_optimal (0.182) — Min. Financial Loss",
+            "default (0.500) — Balanced Baseline",
+            "f1_optimal (0.798) — High Precision",
+            "f2_optimal (0.552) — High Recall",
+            "custom (Manual Cutoff)",
+        ],
+        index=0,
     )
-    threshold_name = threshold_choice.split()[0]
+    threshold_key = threshold_choice.split()[0]
+    if threshold_key == "custom":
+        custom_thresh_val = st.number_input(
+            "Custom Cutoff (0.0 to 1.0):", min_value=0.001, max_value=0.999, value=0.500, step=0.02
+        )
+        threshold_to_use = float(custom_thresh_val)
+    else:
+        threshold_to_use = threshold_key
+
     auto_escalate_check = st.checkbox("Auto-escalate CRITICAL alerts to Cases", value=True)
 
     triage_button = st.button("🚀 Score Transaction & Triage", type="primary", use_container_width=True)
@@ -375,7 +390,7 @@ with sim_col2:
                 triage_res = service.process_and_triage_transaction(
                     db=db,
                     transaction=selected_tx,
-                    threshold=threshold_name,
+                    threshold=threshold_to_use,
                     apply_preprocessing=apply_prep,
                     auto_escalate=auto_escalate_check,
                 )

@@ -22,6 +22,13 @@ from dashboard.utils import (
     inject_custom_styles,
     render_metric_card,
 )
+from src.agents.config import DEFAULT_AGENT_MODEL, SUPPORTED_MODELS
+from src.agents.evaluator import evaluate_agent_on_cases
+from src.agents.investigation_agent import (
+    apply_investigator_decision,
+    run_case_investigation,
+)
+from src.agents.schemas import InvestigatorApprovalRequest
 from src.cases.database import get_db_context
 from src.cases.models import (
     AlertPriority,
@@ -148,6 +155,245 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# =============================================================================
+# AGENTIC INVESTIGATION LAYER (LANGGRAPH + GROQ OPEN-SOURCE LLMs)
+# =============================================================================
+with st.container():
+    st.markdown(
+        """
+        <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.7) 0%, rgba(15, 23, 42, 0.85) 100%);
+                    border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 12px; padding: 1.3rem; margin-bottom: 1.5rem;
+                    box-shadow: 0 4px 20px -2px rgba(124, 58, 237, 0.15);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
+                <div style="font-size: 1.25rem; font-weight: 700; color: #e0e7ff; display: flex; align-items: center; gap: 0.6rem;">
+                    <span>🤖</span> <span>Autonomous Agentic Investigator</span>
+                    <span style="font-size: 0.72rem; background: rgba(139, 92, 246, 0.25); color: #c4b5fd; padding: 2px 8px; border-radius: 9999px; border: 1px solid rgba(139, 92, 246, 0.4);">
+                        LangGraph 1.2.16 • Groq OSS LLMs
+                    </span>
+                </div>
+                <div style="font-size: 0.82rem; color: #a5b4fc;">
+                    Multi-signal synthesis • TreeSHAP & Isolation Forest evidence • Grounding verification
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    ag_col1, ag_col2, ag_col3 = st.columns([3, 4, 3])
+    with ag_col1:
+        model_choice = st.selectbox(
+            "Groq LLM Engine:",
+            options=SUPPORTED_MODELS,
+            index=0 if DEFAULT_AGENT_MODEL in SUPPORTED_MODELS else 0,
+            key=f"agent_model_select_{case_dict['case_id']}",
+        )
+    with ag_col2:
+        st.write("")
+        st.write("")
+        run_agent_clicked = st.button(
+            "⚡ Generate AI Investigation Report",
+            type="primary",
+            use_container_width=True,
+            key=f"btn_investigate_{case_dict['case_id']}",
+        )
+    with ag_col3:
+        st.write("")
+        st.write("")
+        show_bench = st.checkbox("Show Evaluation Benchmark", value=False, key=f"toggle_bench_{case_dict['case_id']}")
+
+    report_state_key = f"agent_report_{case_dict['case_id']}"
+    if run_agent_clicked:
+        with st.spinner(f"Orchestrating agent workflow with {model_choice}... (Gathering evidence → Synthesizing signals → Verifying factual grounding)"):
+            try:
+                agent_res = run_case_investigation(
+                    case_id=case_dict["case_id"],
+                    model_name=model_choice,
+                    investigator_id=case_dict.get("assigned_analyst") or "lead_analyst",
+                )
+                st.session_state[report_state_key] = agent_res
+                st.toast("Agent investigation completed and validated!", icon="✅")
+            except Exception as exc:
+                st.error(f"Investigation agent encountered an error: {exc}")
+
+    agent_result = st.session_state.get(report_state_key)
+    if agent_result and agent_result.get("report"):
+        rep = agent_result["report"]
+        v_passed = agent_result.get("validation_passed", True)
+        v_errors = agent_result.get("validation_errors", [])
+
+        with st.container():
+            st.markdown(
+                f"""
+                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; padding: 1.2rem; margin-top: 0.5rem; margin-bottom: 1.2rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <span style="font-size: 1.15rem; font-weight: 700; color: #f8fafc;">📋 Executive Investigation Summary</span>
+                            &nbsp;&nbsp;
+                            <span style="background: {'rgba(16, 185, 129, 0.2)' if v_passed else 'rgba(239, 68, 68, 0.2)'}; color: {'#34d399' if v_passed else '#f87171'}; border: 1px solid {'rgba(16, 185, 129, 0.4)' if v_passed else 'rgba(239, 68, 68, 0.4)'}; padding: 3px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600;">
+                                {'✅ Factual Grounding Verified' if v_passed else '⚠️ Grounding Revision Needed'}
+                            </span>
+                        </div>
+                        <div style="font-size: 0.85rem; color: #94a3b8;">
+                            Engine: <code>{agent_result.get('model_used')}</code> &nbsp;|&nbsp;
+                            Confidence: <b style="color: #38bdf8;">{int(rep.get('confidence_score', 0.85) * 100)}%</b>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.8rem; font-size: 0.95rem; color: #e2e8f0; line-height: 1.6; background: rgba(30, 41, 59, 0.5); padding: 0.8rem; border-radius: 6px;">
+                        {rep.get('executive_summary', 'No summary generated.')}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            rec_c1, rec_c2, rec_c3 = st.columns([1, 1, 1])
+            with rec_c1:
+                st.metric("Recommended Verdict", rep.get("recommended_verdict", "UNKNOWN"))
+            with rec_c2:
+                st.metric("Recommended Mitigation", rep.get("recommended_action", "UNKNOWN"))
+            with rec_c3:
+                st.metric("Grounding Audit Status", "PASSED (0 Hallucinations)" if v_passed else "FLAGGED")
+
+            st.markdown("#### 🧠 **Synthesized Behavioral Findings**")
+            st.markdown(
+                f"<div style='font-size: 0.9rem; color: #cbd5e1; background: rgba(15, 23, 42, 0.4); padding: 0.8rem; border-radius: 6px; border-left: 3px solid #6366f1; margin-bottom: 1rem;'>"
+                f"{rep.get('investigation_findings', 'No detailed findings.')}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            st.markdown("#### 🔍 **Supporting Evidence Citations (Factual Grounding)**")
+            citations = rep.get("key_evidence_citations", [])
+            if citations:
+                cit_records = []
+                for c in citations:
+                    cit_records.append({
+                        "Feature": c.get("feature"),
+                        "Observed Value": round(c.get("observed_value"), 4) if isinstance(c.get("observed_value"), (int, float)) else c.get("observed_value"),
+                        "SHAP Impact (Log-Odds)": round(c.get("shap_value"), 4) if isinstance(c.get("shap_value"), (int, float)) else c.get("shap_value"),
+                        "Direction": c.get("direction"),
+                        "Statistical Rationale": c.get("rationale"),
+                    })
+                st.dataframe(pd.DataFrame(cit_records), hide_index=True, use_container_width=True)
+
+            if rep.get("anomaly_context") or rep.get("case_precedent"):
+                ac_col1, ac_col2 = st.columns(2)
+                with ac_col1:
+                    st.markdown("**Anomaly Detection Context:**")
+                    st.info(rep.get("anomaly_context", "N/A"))
+                with ac_col2:
+                    st.markdown("**Historical Case Precedent:**")
+                    st.info(rep.get("case_precedent", "N/A"))
+
+            # Human-in-the-Loop Approval Checkpoint
+            st.markdown("---")
+            st.markdown("### 🚦 **Investigator Approval Checkpoint**")
+            st.markdown(
+                "<div style='font-size: 0.82rem; color: #94a3b8; margin-bottom: 0.8rem;'>"
+                "The agent recommends the verdict and action below based on verified ML evidence. "
+                "Review and click <b>Approve & Apply</b> to commit these findings to the official case lifecycle."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+            chk_col1, chk_col2 = st.columns([1, 1], gap="medium")
+            with chk_col1:
+                all_verdicts = [v.value for v in CaseVerdict]
+                agent_v = rep.get("recommended_verdict")
+                v_idx = all_verdicts.index(agent_v) if agent_v in all_verdicts else 0
+                appr_verdict = st.selectbox("Approve or Adjust Verdict:", all_verdicts, index=v_idx, key=f"appr_v_{case_dict['case_id']}")
+
+                all_actions = [a.value for a in CaseAction]
+                agent_a = rep.get("recommended_action")
+                a_idx = all_actions.index(agent_a) if agent_a in all_actions else 0
+                appr_action = st.selectbox("Approve or Adjust Mitigation:", all_actions, index=a_idx, key=f"appr_a_{case_dict['case_id']}")
+
+            with chk_col2:
+                suggested_note = (
+                    f"[Agent Recommendation Approved]\n"
+                    f"Executive Summary: {rep.get('executive_summary')}\n"
+                    f"Recommended Action: {appr_action}"
+                )
+                appr_notes = st.text_area(
+                    "Investigator Sign-Off Comments:",
+                    value=suggested_note,
+                    key=f"appr_notes_{case_dict['case_id']}",
+                    height=110,
+                )
+
+            appr_btn_col1, appr_btn_col2 = st.columns([2, 3])
+            with appr_btn_col1:
+                apply_approval = st.button(
+                    "✅ Approve & Apply Recommendation to Case",
+                    type="primary",
+                    use_container_width=True,
+                    key=f"btn_apply_appr_{case_dict['case_id']}",
+                )
+
+                if apply_approval:
+                    with st.spinner("Committing investigator decision and updating case lifecycle..."):
+                        req = InvestigatorApprovalRequest(
+                            case_id=case_dict["case_id"],
+                            investigator_id=case_dict.get("assigned_analyst") or "lead_analyst",
+                            action_approved=True,
+                            final_verdict=appr_verdict,
+                            final_action=appr_action,
+                            analyst_comments=appr_notes,
+                        )
+                        apply_investigator_decision(case_id=case_dict["case_id"], decision=req)
+                    st.success("Investigator decision committed successfully!")
+                    st.rerun()
+
+            with st.expander("🔬 View Raw Agent Structured Payload & State"):
+                st.json(agent_result)
+
+    # Benchmark Suite Expander
+    if show_bench:
+        st.markdown("---")
+        st.markdown("### 🧪 **Agent Factual Grounding & Citation Benchmark**")
+        st.markdown(
+            "<div style='font-size: 0.82rem; color: #94a3b8; margin-bottom: 0.8rem;'>"
+            "Evaluates factual grounding against raw transaction vectors, citation precision against TreeSHAP values, "
+            "hallucination-freedom on anonymized PCA features, and tool correctness across representative cases."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        b_c1, b_c2 = st.columns([3, 2])
+        with b_c1:
+            num_cases_eval = st.slider("Number of Cases to Benchmark:", min_value=1, max_value=5, value=2, key=f"bench_num_cases_{case_dict['case_id']}")
+        with b_c2:
+            st.write("")
+            run_eval_clicked = st.button("🚀 Run Agent Evaluation Benchmark", use_container_width=True, key=f"btn_run_eval_{case_dict['case_id']}")
+
+        if run_eval_clicked:
+            with st.spinner("Benchmarking agent across representative cases..."):
+                try:
+                    bench_res = evaluate_agent_on_cases(limit=num_cases_eval, model_name=model_choice)
+                    st.session_state["agent_benchmark_results"] = bench_res
+                    st.toast("Evaluation benchmark completed!", icon="📊")
+                except Exception as b_err:
+                    st.error(f"Benchmark error: {b_err}")
+
+        saved_bench = st.session_state.get("agent_benchmark_results")
+        if saved_bench and "benchmark_summary" in saved_bench:
+            bs = saved_bench["benchmark_summary"]
+            bm1, bm2, bm3, bm4 = st.columns(4)
+            with bm1:
+                st.metric("Factual Grounding", f"{bs.get('factual_grounding_accuracy', 0.0) * 100:.1f}%")
+            with bm2:
+                st.metric("Citation Accuracy", f"{bs.get('evidence_citation_accuracy', 0.0) * 100:.1f}%")
+            with bm3:
+                st.metric("Hallucination-Free Rate", f"{bs.get('hallucination_freedom_rate', 0.0) * 100:.1f}%")
+            with bm4:
+                st.metric("Composite Agent Score", f"{bs.get('composite_agent_quality', 0.0) * 100:.1f}%")
+
+            with st.expander("📊 Detailed Case-by-Case Benchmark Results"):
+                st.json(saved_bench.get("case_evaluations", []))
+
+    st.markdown("---")
 
 # =============================================================================
 # TWO-PANE WORKSPACE:

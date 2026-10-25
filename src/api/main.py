@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.routes.agent import router as agent_router
 from src.api.routes.alerts import router as alerts_router
 from src.api.routes.cases import router as cases_router
 from src.api.routes.predict import router as predict_router
@@ -62,6 +63,7 @@ app.add_middleware(
 app.include_router(predict_router)
 app.include_router(alerts_router)
 app.include_router(cases_router)
+app.include_router(agent_router)
 
 
 @app.get("/", tags=["General"])
@@ -76,6 +78,10 @@ def root():
         "metadata": "/model/metadata",
         "alerts_queue": "GET /alerts",
         "cases_management": "GET /cases",
+        "agent_investigate": "POST /cases/{case_id}/investigate",
+        "agent_decision": "POST /cases/{case_id}/agent-decision",
+        "agent_evaluate": "POST /agent/evaluate",
+        "agent_tools_check": "GET /agent/tools/check",
         "predict_single": "POST /predict",
         "predict_batch": "POST /predict/batch",
         "predict_explain": "POST /predict/explain",

@@ -80,7 +80,7 @@ def test_alert_repository_crud():
         assert updated.status == AlertStatus.ESCALATED.value
 
         # List alerts with priority filter
-        items, count = AlertRepository.list_alerts(db, priority=AlertPriority.CRITICAL.value)
+        items, count = AlertRepository.list_alerts(db, priority=AlertPriority.CRITICAL.value, limit=500)
         assert count >= 1
         assert any(i.alert_id == alert.alert_id for i in items)
 

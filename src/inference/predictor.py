@@ -167,6 +167,23 @@ class FraudPredictor:
 
         if isinstance(threshold, str):
             key = threshold.lower().strip()
+
+            # Attempt numeric conversion for string representation of floats (e.g. "0.850")
+            try:
+                numeric_val = float(key)
+                return self.resolve_threshold(numeric_val)
+            except ValueError:
+                pass
+
+            # Supported operational aliases
+            aliases = {
+                "high_precision": "f1_optimal",
+                "high_recall": "f2_optimal",
+                "conservative": "cost_optimal",
+            }
+            if key in aliases:
+                key = aliases[key]
+
             if key not in thresholds:
                 raise ValueError(
                     f"Unknown threshold name '{threshold}'. Valid operational options: {list(thresholds.keys())}"
