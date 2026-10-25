@@ -25,6 +25,7 @@ __pycache__/
 # Model Artifacts & Serialized Files
 *.pkl
 *.joblib
+catboost_info/
 
 # OS & Editor generated files
 .DS_Store

@@ -1,0 +1,28 @@
+{
+    "model_name": "XGBoost Classifier",
+    "evaluation_metrics": {
+        "pr_auc": 0.8209,
+        "roc_auc": 0.9766,
+        "f1_score_default": 0.837,
+        "recall_default": 0.8105,
+        "precision_default": 0.8652
+    },
+    "operational_thresholds": {
+        "default": 0.5,
+        "cost_optimal": 0.182,
+        "f1_optimal": 0.798,
+        "f2_optimal": 0.552
+    },
+    "cost_parameters": {
+        "cost_fn_usd": 150.0,
+        "cost_fp_usd": 3.0,
+        "min_financial_loss_usd": 2658.0
+    },
+    "top_5_predictive_features": [
+        "V14",
+        "V10",
+        "V4",
+        "V8",
+        "V12"
+    ]
+}
