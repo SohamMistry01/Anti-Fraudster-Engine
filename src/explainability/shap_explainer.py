@@ -196,6 +196,7 @@ class FraudSHAPExplainer:
         # 7. Generate Plotly figure if requested
         plot_dict = None
         plot_html = None
+        fig = None
         if generate_plot:
             fig = self.create_shap_waterfall_plot(
                 top_contributions=top_overall,
@@ -218,6 +219,7 @@ class FraudSHAPExplainer:
             "top_negative_contributors": top_negative,
             "all_contributions": contributions_sorted,
             "evidence_summary": evidence_summary,
+            "figure": fig,
             "plot_dict": plot_dict,
             "plot_html": plot_html,
         }

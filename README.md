@@ -22,7 +22,7 @@ pip install -e .
 ```bash
 pytest -v
 ```
-*(44 unit & integration tests covering scoring, explainability, anomaly detection, and API endpoints)*
+*(50 unit & integration tests covering scoring, explainability, anomaly detection, alert triage, case lifecycle, and API endpoints)*
 
 ---
 
@@ -193,3 +193,45 @@ Interactive Swagger documentation is available at: **`http://localhost:8000/docs
 | `POST` | `/anomaly/score` | Independent Isolation Forest unsupervised anomaly scoring |
 | `POST` | `/evaluate/combined` | Multi-signal decision triage combining supervised, anomaly, and SHAP evidence |
 | `GET` | `/anomaly/comparison` | On-demand comparative benchmark between XGBoost and Isolation Forest |
+| `GET` | `/alerts` | Prioritised alert queue sorted by urgency (CRITICAL -> HIGH -> MEDIUM -> LOW) |
+| `GET` | `/alerts/summary` | Aggregate alert queue metrics grouped by status and priority |
+| `GET` | `/alerts/{alert_id}` | Detailed alert record with trigger policy reasons and transaction payload |
+| `PATCH` | `/alerts/{alert_id}/status` | Transition alert lifecycle status (NEW, ESCALATED, CASE_CREATED, DISMISSED) |
+| `POST` | `/alerts/triage` | Triage incoming transaction against risk policies and trigger/escalate alert |
+| `GET` | `/cases` | List paginated investigation cases with status, priority, and analyst filters |
+| `GET` | `/cases/summary` | Executive case resolution metrics and confirmed fraud rates |
+| `POST` | `/cases` | Escalate an alert into an active investigation case |
+| `GET` | `/cases/{case_id}` | Comprehensive case workspace including notes and immutable prediction snapshot |
+| `PATCH` | `/cases/{case_id}/workflow` | Update case status, assign analyst, record final verdict, and mitigation action |
+| `POST` | `/cases/{case_id}/notes` | Append auditable investigator note to a case |
+| `GET` | `/cases/{case_id}/audit` | Complete chronological audit log of all case actions for compliance auditability |
+
+---
+
+## 8. Alert & Case Management System
+
+A production investigation workspace designed for fraud operations and compliance auditability.
+
+### Key Architectural Tenets
+1. **Prioritised Alert Queue (`src/risk/policy.py`)**: Converts scored transactions into urgency tiers (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) based on financial risk, model certainty, and anomaly scores.
+2. **Immutable Inference Preservation (`src/cases/models.py`)**: When an alert is escalated into a case, the original model version, threshold used, fraud probability, anomaly score, operational quadrant, and TreeSHAP attribution snapshot are permanently preserved in dedicated immutable columns. Subsequent analyst verdicts, status transitions, or mitigation actions never overwrite or alter the initial ML prediction record.
+3. **Database Schema & Migrations (`alembic/`)**:
+   - Built on **SQLAlchemy** ORM models (`Alert`, `InvestigationCase`, `CaseNote`, `CaseAuditLog`).
+   - Supports **PostgreSQL** (via `DATABASE_URL=postgresql+psycopg://...`) with automatic zero-configuration **SQLite** fallback (`data/fraud_cases.db`).
+   - Managed via **Alembic** migrations:
+     ```bash
+     alembic upgrade head
+     ```
+4. **Tamper-Evident Audit Trails**: Every case creation, status transition (`OPEN` $\rightarrow$ `UNDER_INVESTIGATION` $\rightarrow$ `RESOLVED_CONFIRMED_FRAUD`), verdict assignment, and note addition appends an immutable `CaseAuditLog` entry detailing what changed, who performed it, and the exact timestamp.
+
+### Interactive Streamlit Investigation Workspace
+Launch the web workspace:
+```bash
+streamlit run dashboard/app.py
+```
+
+The workspace includes 4 interactive pages:
+- **Executive Operations Center (`dashboard/app.py`)**: Real-time KPI metric cards (Total Alerts, Active Cases, Confirmed Fraud, False Positive Ratio), priority distribution donut charts, operational risk quadrants, recent alert previews, and an interactive live scoring triage simulator.
+- **Prioritised Alert Queue (`dashboard/pages/alerts.py`)**: Filterable queue by lifecycle status, urgency priority, and minimum probability. Supports one-click alert escalation to active investigation cases or dismissal.
+- **Investigation Case Workbench (`dashboard/pages/investigations.py`)**: Full analyst workbench showing the immutable prediction snapshot side-by-side with investigation lifecycle controls (status updates, verdict selection, mitigation action execution, investigator notes feed, and chronological audit trail).
+- **Transaction Evidence Deep-Dive (`dashboard/pages/transaction_detail.py`)**: Interactive Plotly TreeSHAP waterfall attributions, dual-signal gauge, and complete 30-feature vector inspection adhering strictly to statistical facts without fabricated domain narratives.

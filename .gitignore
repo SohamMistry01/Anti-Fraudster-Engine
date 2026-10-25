@@ -1,35 +1,120 @@
-# Environments
+# =============================================================================
+# Python Bytecode & Cache
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+
+# =============================================================================
+# Virtual Environments
+# =============================================================================
 venv/
 .venv/
 env/
-.env
+ENV/
+env.bak/
+venv.bak/
 
-# Large Datasets & Data Directory
+# =============================================================================
+# Environment Variables & Credentials
+# =============================================================================
+.env
+.env.*
+*.env
+!.env.example
+
+# =============================================================================
+# Datasets & Local Databases
+# =============================================================================
+# Ignore all CSV, compressed datasets, and SQLite database files in data/
 data/*.csv
 data/*.zip
 data/*.tar.gz
+data/*.parquet
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/fraud_cases.db
 data/creditcard.csv
 data/train_data.csv
 data/test_data.csv
 !data/.gitkeep
 
-# Jupyter Notebook Checkpoints
-.ipynb_checkpoints/
+# Root databases
+*.db
+*.sqlite
+*.sqlite3
 
-# Python Bytecode & Cache
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyd
-
-# Model Artifacts & Serialized Files
+# =============================================================================
+# Model Artifacts & ML Runs
+# =============================================================================
 *.pkl
 *.joblib
-!models/*.joblib
+*.h5
+*.onnx
 catboost_info/
+wandb/
+mlruns/
+lightning_logs/
 
-# OS & Editor generated files
+# Whitelist production champion models and metadata in models/
+!models/*.joblib
+!models/*.json
+!models/*.pkl
+
+# =============================================================================
+# Testing, Coverage & Linters
+# =============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# =============================================================================
+# Build & Package Distribution
+# =============================================================================
+build/
+dist/
+*.egg-info/
+*.egg
+eggs/
+.eggs/
+
+# =============================================================================
+# Logs & System Scratch
+# =============================================================================
+*.log
+logs/
+
+# =============================================================================
+# Streamlit Cache & Secrets
+# =============================================================================
+.streamlit/secrets.toml
+
+# =============================================================================
+# Jupyter Notebook Checkpoints
+# =============================================================================
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# =============================================================================
+# OS & Editor Specific Files
+# =============================================================================
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 .vscode/
 .idea/
+*.swp
+*.swo
+*~

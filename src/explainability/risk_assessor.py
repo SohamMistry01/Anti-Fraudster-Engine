@@ -162,8 +162,10 @@ class IntegratedRiskAssessor:
                 "top_positive_contributors": shap_res["top_positive_contributors"],
                 "top_negative_contributors": shap_res["top_negative_contributors"],
                 "evidence_breakdown": evidence_breakdown,
+                "evidence_summary": shap_res.get("evidence_summary"),
             },
             "plots": {
+                "shap_plot_fig": shap_res.get("figure"),
                 "shap_plot_dict": shap_res.get("plot_dict"),
                 "shap_plot_html": shap_res.get("plot_html"),
             },

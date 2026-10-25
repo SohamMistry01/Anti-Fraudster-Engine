@@ -188,3 +188,120 @@ def test_api_anomaly_comparison_endpoint():
     assert "metrics_plot_html" in data
     assert "bivariate_plot_html" in data
 
+
+def test_api_alerts_endpoints(holdout_test_df: pd.DataFrame):
+    """Verify GET /alerts, GET /alerts/summary, and POST /alerts/triage."""
+    # 1. Summary
+    res_sum = client.get("/alerts/summary")
+    assert res_sum.status_code == 200
+    assert "total_alerts" in res_sum.json()
+
+    # 2. List
+    res_list = client.get("/alerts?limit=10")
+    assert res_list.status_code == 200
+    data_list = res_list.json()
+    assert "total" in data_list
+    assert "items" in data_list
+
+    # 3. Triage a fraud sample
+    fraud_row = holdout_test_df[holdout_test_df["Class"] == 1].iloc[0].drop(labels=["Class"]).to_dict()
+    triage_payload = {
+        "transaction": fraud_row,
+        "threshold": "default",
+        "apply_preprocessing": False,
+        "auto_escalate": False,
+    }
+    res_triage = client.post("/alerts/triage", json=triage_payload)
+    assert res_triage.status_code == 200
+    triage_data = res_triage.json()
+    assert triage_data["alert_created"] is True
+    assert "alert" in triage_data
+    created_alert_id = triage_data["alert"]["alert_id"]
+
+    # 4. Get single alert
+    res_single = client.get(f"/alerts/{created_alert_id}")
+    assert res_single.status_code == 200
+    assert res_single.json()["alert_id"] == created_alert_id
+
+    # 5. Patch status
+    res_patch = client.patch(f"/alerts/{created_alert_id}/status", json={"status": "ESCALATED"})
+    assert res_patch.status_code == 200
+    assert res_patch.json()["status"] == "ESCALATED"
+
+
+def test_api_cases_endpoints(holdout_test_df: pd.DataFrame):
+    """Verify GET /cases, POST /cases, PATCH /cases/{id}/workflow, POST notes, and GET audit."""
+    # 1. First create an alert to escalate
+    fraud_row = holdout_test_df[holdout_test_df["Class"] == 1].iloc[0].drop(labels=["Class"]).to_dict()
+    triage_payload = {
+        "transaction": fraud_row,
+        "threshold": "cost_optimal",
+        "apply_preprocessing": False,
+        "auto_escalate": False,
+    }
+    res_triage = client.post("/alerts/triage", json=triage_payload)
+    alert_id = res_triage.json()["alert"]["alert_id"]
+
+    # 2. Open case from alert
+    case_payload = {
+        "alert_id": alert_id,
+        "assigned_analyst": "analyst_api_test",
+        "initial_note": "Case escalated via API test suite.",
+        "creator": "api_test_runner",
+    }
+    res_open = client.post("/cases", json=case_payload)
+    assert res_open.status_code == 201
+    case_data = res_open.json()
+    case_id = case_data["case_id"]
+    assert case_data["status"] == "OPEN"
+    assert case_data["assigned_analyst"] == "analyst_api_test"
+    assert "original_prediction" in case_data
+    assert case_data["original_prediction"]["fraud_probability"] > 0.90
+
+    # 3. List cases and summary
+    res_summary = client.get("/cases/summary")
+    assert res_summary.status_code == 200
+    assert "total_cases" in res_summary.json()
+
+    res_cases = client.get("/cases?limit=10")
+    assert res_cases.status_code == 200
+    assert any(c["case_id"] == case_id for c in res_cases.json()["items"])
+
+    # 4. Get case details
+    res_get = client.get(f"/cases/{case_id}")
+    assert res_get.status_code == 200
+    assert res_get.json()["case_id"] == case_id
+
+    # 5. Add note
+    res_note = client.post(f"/cases/{case_id}/notes", json={"author": "analyst_api_test", "content": "Verified abnormal V14 coefficient."})
+    assert res_note.status_code == 201
+    assert res_note.json()["case_id"] == case_id
+
+    # 6. Update workflow (status and verdict)
+    workflow_update = {
+        "status": "RESOLVED_CONFIRMED_FRAUD",
+        "verdict": "CONFIRMED_FRAUD",
+        "action_taken": "CARD_BLOCKED",
+        "resolution_notes": "Confirmed unauthorized transaction. Card blocked.",
+        "updated_by": "supervisor_api",
+    }
+    res_workflow = client.patch(f"/cases/{case_id}/workflow", json=workflow_update)
+    assert res_workflow.status_code == 200
+    wf_data = res_workflow.json()
+    assert wf_data["status"] == "RESOLVED_CONFIRMED_FRAUD"
+    assert wf_data["verdict"] == "CONFIRMED_FRAUD"
+    assert wf_data["action_taken"] == "CARD_BLOCKED"
+    # Verify original prediction is preserved!
+    assert wf_data["original_prediction"]["fraud_probability"] > 0.90
+
+    # 7. Audit logs
+    res_audit = client.get(f"/cases/{case_id}/audit")
+    assert res_audit.status_code == 200
+    audit_items = res_audit.json()
+    assert isinstance(audit_items, list)
+    assert len(audit_items) >= 2
+    actions = [a["action"] for a in audit_items]
+    assert "CASE_CREATED" in actions
+    assert "NOTE_ADDED" in actions
+
+

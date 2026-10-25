@@ -5,7 +5,10 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.routes.alerts import router as alerts_router
+from src.api.routes.cases import router as cases_router
 from src.api.routes.predict import router as predict_router
+from src.cases.database import init_db
 from src.inference.predictor import get_predictor
 
 logging.basicConfig(
@@ -17,7 +20,10 @@ logger = logging.getLogger("fraud_api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Warm up predictor and preprocessor artifacts during startup."""
+    """Warm up predictor and initialize database tables during application startup."""
+    logger.info("Initializing database tables...")
+    init_db()
+
     logger.info("Initializing FraudPredictor singleton during application startup...")
     predictor = get_predictor()
     logger.info(
@@ -54,6 +60,8 @@ app.add_middleware(
 
 # Register route modules
 app.include_router(predict_router)
+app.include_router(alerts_router)
+app.include_router(cases_router)
 
 
 @app.get("/", tags=["General"])
@@ -66,6 +74,8 @@ def root():
         "docs": "/docs",
         "health": "/health",
         "metadata": "/model/metadata",
+        "alerts_queue": "GET /alerts",
+        "cases_management": "GET /cases",
         "predict_single": "POST /predict",
         "predict_batch": "POST /predict/batch",
         "predict_explain": "POST /predict/explain",
