@@ -68,4 +68,8 @@ def root():
         "metadata": "/model/metadata",
         "predict_single": "POST /predict",
         "predict_batch": "POST /predict/batch",
+        "predict_explain": "POST /predict/explain",
+        "anomaly_score": "POST /anomaly/score",
+        "evaluate_combined": "POST /evaluate/combined",
+        "anomaly_comparison": "GET /anomaly/comparison",
     }

@@ -4,10 +4,17 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, Body, HTTPException, Query, status
 
+from src.anomaly.comparison import compare_models
+from src.anomaly.detector import get_anomaly_detector
+from src.explainability.risk_assessor import get_risk_assessor
+from src.explainability.shap_explainer import get_explainer
 from src.inference.predictor import get_predictor
 from src.inference.schemas import (
+    AnomalyScoreResponse,
     BatchPredictionRequest,
     BatchPredictionResponse,
+    CombinedAssessmentResponse,
+    ExplanationResponse,
     HealthResponse,
     ModelMetadataResponse,
     PredictionRequest,
@@ -168,4 +175,148 @@ def predict_batch_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Batch inference error: {exc}",
+        ) from exc
+
+
+@router.post(
+    "/predict/explain",
+    response_model=ExplanationResponse,
+    summary="Score Transaction with SHAP Explanation",
+    description="Scores transaction and returns detailed TreeSHAP mathematical feature attribution with Plotly visualisations.",
+)
+def explain_transaction_endpoint(
+    payload: Union[PredictionRequest, TransactionInput] = Body(...),
+    threshold: Optional[str] = Query(default=None),
+    apply_preprocessing: Optional[bool] = Query(default=None),
+    top_n: int = Query(default=10, ge=1, le=30),
+    include_plot: bool = Query(default=True),
+) -> ExplanationResponse:
+    """Generate SHAP local explanations for individual prediction."""
+    explainer = get_explainer()
+
+    try:
+        if isinstance(payload, PredictionRequest):
+            tx_data = payload.transaction
+            req_thresh = threshold if threshold is not None else payload.threshold
+            req_prep = apply_preprocessing if apply_preprocessing is not None else payload.apply_preprocessing
+        else:
+            tx_data = payload
+            req_thresh = threshold if threshold is not None else "default"
+            req_prep = apply_preprocessing if apply_preprocessing is not None else True
+
+        result = explainer.explain_transaction(
+            transaction=tx_data,
+            top_n=top_n,
+            apply_preprocessing=req_prep,
+            generate_plot=include_plot,
+            threshold=req_thresh,
+        )
+        return ExplanationResponse(**result)
+
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("SHAP explanation error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Explanation error: {exc}",
+        ) from exc
+
+
+@router.post(
+    "/anomaly/score",
+    response_model=AnomalyScoreResponse,
+    summary="Score Transaction with Isolation Forest",
+    description="Generates an independent unsupervised anomaly score without labels.",
+)
+def anomaly_score_endpoint(
+    payload: Union[PredictionRequest, TransactionInput] = Body(...),
+    apply_preprocessing: Optional[bool] = Query(default=None),
+) -> AnomalyScoreResponse:
+    """Generate an independent unsupervised anomaly score for a transaction."""
+    detector = get_anomaly_detector()
+
+    try:
+        if isinstance(payload, PredictionRequest):
+            tx_data = payload.transaction
+            req_prep = apply_preprocessing if apply_preprocessing is not None else payload.apply_preprocessing
+        else:
+            tx_data = payload
+            req_prep = apply_preprocessing if apply_preprocessing is not None else True
+
+        result = detector.score_transaction(
+            transaction=tx_data,
+            apply_preprocessing=req_prep,
+        )
+        return AnomalyScoreResponse(**result)
+
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Anomaly scoring error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Anomaly scoring error: {exc}",
+        ) from exc
+
+
+@router.post(
+    "/evaluate/combined",
+    response_model=CombinedAssessmentResponse,
+    summary="Integrated Multi-Signal Risk Assessment",
+    description="Evaluates supervised XGBoost, unsupervised Isolation Forest, and SHAP evidence separately before combining into an operational triage quadrant.",
+)
+def combined_assessment_endpoint(
+    payload: Union[PredictionRequest, TransactionInput] = Body(...),
+    threshold: Optional[str] = Query(default=None),
+    apply_preprocessing: Optional[bool] = Query(default=None),
+    include_plot: bool = Query(default=False),
+) -> CombinedAssessmentResponse:
+    """Synthesize multi-signal risk diagnosis across supervised and unsupervised models."""
+    assessor = get_risk_assessor()
+
+    try:
+        if isinstance(payload, PredictionRequest):
+            tx_data = payload.transaction
+            req_thresh = threshold if threshold is not None else payload.threshold
+            req_prep = apply_preprocessing if apply_preprocessing is not None else payload.apply_preprocessing
+        else:
+            tx_data = payload
+            req_thresh = threshold if threshold is not None else "default"
+            req_prep = apply_preprocessing if apply_preprocessing is not None else True
+
+        result = assessor.assess_transaction(
+            transaction=tx_data,
+            threshold=req_thresh,
+            apply_preprocessing=req_prep,
+            generate_plots=include_plot,
+        )
+        return CombinedAssessmentResponse(**result)
+
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Combined assessment error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Assessment error: {exc}",
+        ) from exc
+
+
+@router.get(
+    "/anomaly/comparison",
+    summary="Supervised vs. Unsupervised Benchmark Audit",
+    description="Returns comparative evaluation between XGBoost and Isolation Forest across scikit-learn metrics and bivariate risk distribution.",
+)
+def model_comparison_endpoint(
+    subsample_n: Optional[int] = Query(default=1000, description="Sample size limit for fast interactive evaluation"),
+) -> Dict[str, Any]:
+    """Execute on-demand comparative audit between XGBoost and Isolation Forest."""
+    try:
+        return compare_models(subsample_n=subsample_n)
+    except Exception as exc:
+        logger.error("Model comparison error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Comparison audit error: {exc}",
         ) from exc

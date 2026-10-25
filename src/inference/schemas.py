@@ -2,7 +2,7 @@
 
 from enum import Enum
 import math
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -262,3 +262,53 @@ class HealthResponse(BaseModel):
     model_version: str
     model_name: str
     features_count: int
+
+
+class FeatureContribution(BaseModel):
+    """Individual SHAP feature contribution detail."""
+
+    feature: str
+    feature_value: float
+    shap_value: float
+    abs_shap: float
+    direction: str
+    evidence: str
+
+
+class ExplanationResponse(BaseModel):
+    """SHAP explanation output for individual prediction."""
+
+    fraud_probability: float
+    is_fraud: bool
+    risk_category: str
+    threshold_used: float
+    threshold_name: Optional[str] = None
+    base_value: float
+    top_positive_contributors: List[FeatureContribution]
+    top_negative_contributors: List[FeatureContribution]
+    evidence_summary: str
+    plot_dict: Optional[Dict[str, Any]] = None
+    plot_html: Optional[str] = None
+
+
+class AnomalyScoreResponse(BaseModel):
+    """Isolation Forest anomaly score output schema."""
+
+    anomaly_score: float = Field(..., description="Normalized score [0.0, 1.0]; higher indicates greater outlier anomaly")
+    raw_score: float = Field(..., description="Raw decision score from IsolationForest")
+    is_anomaly: bool = Field(..., description="True if flagged as outlier anomaly")
+    anomaly_tier: str = Field(..., description="Categorical tier: 'NORMAL', 'ELEVATED', or 'OUTLIER'")
+    decision_offset: float
+    algorithm: str = "IsolationForest"
+
+
+class CombinedAssessmentResponse(BaseModel):
+    """Multi-signal decision assessment combining supervised, unsupervised, and SHAP evidence."""
+
+    assessment_summary: str
+    operational_quadrant: str
+    recommended_action: str
+    supervised_signal: Dict[str, Any]
+    unsupervised_anomaly_signal: Dict[str, Any]
+    shap_explanation: Dict[str, Any]
+    plots: Optional[Dict[str, Any]] = None

@@ -133,3 +133,58 @@ def test_predict_invalid_threshold_returns_400(holdout_test_df: pd.DataFrame):
     }
     response = client.post("/predict", json=payload)
     assert response.status_code in [400, 422]
+
+
+def test_api_predict_explain_endpoint(holdout_test_df: pd.DataFrame):
+    """Verify POST /predict/explain returns SHAP feature contributions and Plotly HTML."""
+    legit_row = holdout_test_df[holdout_test_df["Class"] == 0].iloc[0].drop(labels=["Class"]).to_dict()
+    response = client.post("/predict/explain?apply_preprocessing=false", json=legit_row)
+    assert response.status_code == 200
+    data = response.json()
+    assert "fraud_probability" in data
+    assert "top_positive_contributors" in data
+    assert "top_negative_contributors" in data
+    assert "evidence_summary" in data
+    assert "plot_html" in data
+    assert data["plot_html"] is not None
+
+
+def test_api_anomaly_score_endpoint(holdout_test_df: pd.DataFrame):
+    """Verify POST /anomaly/score returns normalized anomaly score and flag."""
+    legit_row = holdout_test_df[holdout_test_df["Class"] == 0].iloc[0].drop(labels=["Class"]).to_dict()
+    response = client.post("/anomaly/score?apply_preprocessing=false", json=legit_row)
+    assert response.status_code == 200
+    data = response.json()
+    assert "anomaly_score" in data
+    assert "is_anomaly" in data
+    assert "anomaly_tier" in data
+    assert data["algorithm"] == "IsolationForest"
+    assert data["is_anomaly"] is False
+
+
+def test_api_evaluate_combined_endpoint(holdout_test_df: pd.DataFrame):
+    """Verify POST /evaluate/combined integrates supervised, unsupervised, and SHAP evidence."""
+    legit_row = holdout_test_df[holdout_test_df["Class"] == 0].iloc[0].drop(labels=["Class"]).to_dict()
+    response = client.post("/evaluate/combined?apply_preprocessing=false", json=legit_row)
+    assert response.status_code == 200
+    data = response.json()
+    assert "assessment_summary" in data
+    assert "operational_quadrant" in data
+    assert "recommended_action" in data
+    assert "supervised_signal" in data
+    assert "unsupervised_anomaly_signal" in data
+    assert data["operational_quadrant"] == "CONFIRMED_LEGITIMATE"
+    assert data["recommended_action"] == "APPROVE"
+
+
+def test_api_anomaly_comparison_endpoint():
+    """Verify GET /anomaly/comparison returns comparative metrics and Plotly charts."""
+    response = client.get("/anomaly/comparison?subsample_n=200")
+    assert response.status_code == 200
+    data = response.json()
+    assert "supervised_metrics" in data
+    assert "anomaly_metrics" in data
+    assert "overlap_analysis" in data
+    assert "metrics_plot_html" in data
+    assert "bivariate_plot_html" in data
+

@@ -1,8 +1,8 @@
-# Credit Card Fraud Detection: Production-Ready Inference Pipeline
+# Credit Card Fraud Detection: Production-Ready Inference, Explainability & Anomaly Pipeline
 
-A production-grade machine learning inference engine and REST API for real-time European cardholder transaction fraud scoring.
+A production-grade machine learning inference engine, explainability suite, and REST API for real-time European cardholder transaction fraud scoring and anomaly triage.
 
-Powered by a champion **XGBoost Classifier** (PR-AUC **0.8209**, ROC-AUC **0.9766**), feature-aware preprocessing (`RobustScaler` + `SimpleImputer`), Pydantic validation schemas, and a low-latency FastAPI service.
+Powered by a champion **XGBoost Classifier** (PR-AUC **0.8209**, ROC-AUC **0.9766**), an unsupervised **Isolation Forest** anomaly baseline (ROC-AUC **0.9422**), **TreeSHAP** local explainability with interactive **Plotly** charts, and a low-latency **FastAPI** service.
 
 ---
 
@@ -18,10 +18,11 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### Run the Test Suite
+### Run the Complete Test Suite
 ```bash
 pytest -v
 ```
+*(44 unit & integration tests covering scoring, explainability, anomaly detection, and API endpoints)*
 
 ---
 
@@ -71,7 +72,108 @@ print(result)
 
 ---
 
-## 3. Real-Time FastAPI Service
+## 3. Explainability with TreeSHAP & Plotly
+
+```python
+from src.explainability.shap_explainer import get_explainer
+
+explainer = get_explainer()
+explanation = explainer.explain_transaction(transaction, top_n=5, generate_plot=True)
+
+print("Evidence Summary:", explanation["evidence_summary"])
+print("Top Fraud Drivers:", explanation["top_positive_contributors"])
+# Interactive Plotly figure accessible via:
+# explanation["plot_html"]  # Standalone embeddable HTML snippet
+# explanation["plot_dict"]  # JSON dictionary for frontend visual frameworks
+```
+
+> [!IMPORTANT]
+> **Data Integrity Principle**:
+> Features `V1` through `V28` are anonymized principal components derived via PCA. The pipeline strictly articulates statistical facts (e.g. median deviations and directional log-odds shifts) without fabricating fictitious domain narratives (such as unverified merchant categories, card velocities, or foreign IP addresses).
+
+---
+
+## 4. Unsupervised Anomaly Detection with Isolation Forest
+
+Provides an independent outlier signal trained without class labels:
+
+```python
+from src.anomaly.detector import get_anomaly_detector
+
+detector = get_anomaly_detector()
+anomaly_res = detector.score_transaction(transaction)
+print(anomaly_res)
+# Output:
+# {
+#     "anomaly_score": 0.437,           # Normalized [0.0 = Standard, 1.0 = Extreme Outlier]
+#     "raw_score": 0.1271,             # Raw decision_function score
+#     "is_anomaly": False,             # Binary outlier flag
+#     "anomaly_tier": "NORMAL",        # Categorical tier (NORMAL, ELEVATED, OUTLIER)
+#     "algorithm": "IsolationForest"
+# }
+```
+
+---
+
+## 5. Supervised vs. Unsupervised Model Comparison
+
+Run the comparative evaluation on unseen holdout transactions:
+
+```python
+from src.anomaly.comparison import compare_models, generate_comparison_report
+
+comparison = compare_models()
+print(generate_comparison_report(comparison))
+```
+
+### Empirical Leaderboard on Unseen Test Set (56,746 transactions)
+
+| Evaluation Metric | XGBoost (Supervised Champion) | Isolation Forest (Unsupervised Baseline) | Superiority |
+| :--- | :---: | :---: | :--- |
+| **PR-AUC (Primary)** | **0.8209** | 0.1557 | Supervised (+0.6652) |
+| **ROC-AUC** | **0.9766** | 0.9422 | Supervised (+0.0344) |
+| **Precision** | **86.52%** | 26.47% | Supervised (+60.05%) |
+| **Recall** | **81.05%** | 28.42% | Supervised (+52.63%) |
+| **F1-Score** | **0.8370** | 0.2741 | Supervised (+0.5629) |
+
+### Signal Concordance & Overlap Insights:
+- **Both Models Agree (28 transactions):** Yields **96.4% Precision** (27 of 28 are ground-truth fraud).
+- **Supervised Only (XGBoost):** Flags 50 true frauds missed by Isolation Forest, demonstrating that fraudsters intentionally keep spending subtle ($9.82 median) to evade global outlier detection.
+- **Unsupervised Only (Isolation Forest):** Flags 74 rare statistical anomalies (extreme values or unusual multivariate vectors) representing novel behavioral deviations rather than historical fraud templates.
+
+---
+
+## 6. Integrated Interpretable Risk Triage (4 Quadrants)
+
+The `IntegratedRiskAssessor` evaluates both models independently before synthesizing an operational action:
+
+```python
+from src.explainability.risk_assessor import get_risk_assessor
+
+assessor = get_risk_assessor()
+assessment = assessor.assess_transaction(transaction)
+print(assessment["operational_quadrant"])  # e.g. CONFIRMED_HIGH_RISK, SUBTLE_IN_DISTRIBUTION_FRAUD, NOVEL_ANOMALY_OUTLIER, CONFIRMED_LEGITIMATE
+print(assessment["recommended_action"])    # e.g. DECLINE_TRANSACTION, STEP_UP_2FA, APPROVE
+```
+
+```
+                        Anomaly Score (Isolation Forest)
+                                 ▲
+                     NOVEL       │    CONFIRMED
+                     ANOMALY     │    HIGH RISK
+                 (Step-Up 2FA)   │  (Auto-Decline)
+                                 │
+             ────────────────────┼────────────────────► Fraud Probability (XGBoost)
+                                 │
+                   STANDARD      │     SUBTLE
+                  LEGITIMATE     │      FRAUD
+                (Auto-Approve)   │  (Challenge/Review)
+                                 │
+```
+
+---
+
+## 7. Real-Time FastAPI Service
 
 ### Start the API Server
 ```bash
@@ -87,50 +189,7 @@ Interactive Swagger documentation is available at: **`http://localhost:8000/docs
 | `GET` | `/model/metadata` | Benchmark metrics, operational thresholds, and top predictive features |
 | `POST` | `/predict` | Real-time single transaction scoring |
 | `POST` | `/predict/batch` | High-throughput vectorized batch transaction scoring |
-
-### Sample cURL Request
-
-```bash
-curl -X POST "http://localhost:8000/predict" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "transaction": {
-         "Amount": 149.62,
-         "Time": 406.0,
-         "V1": -2.312, "V2": 1.952, "V3": -1.610, "V4": 3.998,
-         "V5": -0.522, "V6": -1.427, "V7": -2.537, "V8": 1.392,
-         "V9": -2.770, "V10": -2.772, "V11": 3.202, "V12": -2.900,
-         "V13": -0.595, "V14": -4.289, "V15": 0.390, "V16": -1.141,
-         "V17": -2.830, "V18": -0.017, "V19": 0.417, "V20": 0.127,
-         "V21": 0.517, "V22": -0.035, "V23": -0.465, "V24": 0.320,
-         "V25": 0.045, "V26": 0.178, "V27": 0.261, "V28": -0.143
-       },
-       "threshold": "cost_optimal"
-     }'
-```
-
----
-
-## 4. Pipeline Architecture & Guarantees
-
-```
-Incoming Request
-       │
-       ▼
-[ Pydantic Validation ] ──► Rejects NaN, Inf, negative raw amounts, unknown fields
-       │
-       ▼
-[ Feature Alignment ]   ──► Enforces exact 30-feature order (Amount, Time, V1..V28)
-       │
-       ▼
-[ Robust Preprocessing] ──► Median Impute + RobustScaler on Amount & Time
-       │
-       ▼
-[ XGBoost Classifier ]  ──► Probability calculation via serialized Booster
-       │
-       ▼
-[ Decision & Tiering ]  ──► Operational thresholding & LOW/MEDIUM/HIGH/CRITICAL tiers
-       │
-       ▼
-Formatted Response
-```
+| `POST` | `/predict/explain` | TreeSHAP feature attributions and interactive Plotly chart |
+| `POST` | `/anomaly/score` | Independent Isolation Forest unsupervised anomaly scoring |
+| `POST` | `/evaluate/combined` | Multi-signal decision triage combining supervised, anomaly, and SHAP evidence |
+| `GET` | `/anomaly/comparison` | On-demand comparative benchmark between XGBoost and Isolation Forest |
