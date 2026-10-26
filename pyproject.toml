@@ -28,6 +28,10 @@ dependencies = [
     "pydantic==2.14.1",
     "pytest==9.1.1",
     "httpx==0.28.1",
+    "sqlalchemy==2.1.6",
+    "streamlit==1.66.1",
+    "psycopg[binary]==3.3.6",
+    "alembic==1.20.1",
 ]
 
 [tool.setuptools.packages.find]

@@ -97,6 +97,8 @@ logs/
 # Streamlit Cache & Secrets
 # =============================================================================
 .streamlit/secrets.toml
+.agents/
+.claude/
 
 # =============================================================================
 # Jupyter Notebook Checkpoints
