@@ -410,7 +410,11 @@ Rather than replacing or duplicating the underlying machine learning models, the
 
 ### Architecture & Stateful LangGraph Workflow
 
-The investigation workflow is modeled as a compiled state graph (`StateGraph[InvestigationState]`) in [`src/agents/investigation_agent.py`](file:///e:/Fraud-Detection/src/agents/investigation_agent.py):
+The investigation workflow is modeled as a compiled state graph (`StateGraph[InvestigationState]`) in [`src/agents/investigation_agent.py`](src/agents/investigation_agent.py):
+
+<p align="center">
+  <img src="miscellaneous/investigation_agent_graph.png" alt="Investigation Agent State Graph" width="340"/>
+</p>
 
 ```mermaid
 flowchart TD
@@ -577,6 +581,9 @@ Fraud-Detection/
 ├── data/                            # Datasets & local storage (git-ignored)
 │   ├── .gitkeep
 │   └── fraud_cases.db               # Local SQLite database fallback
+│
+├── miscellaneous/                   # State graphs and miscellaneous visual artifacts
+│   └── investigation_agent_graph.png # Compiled LangGraph state machine visualization
 │
 ├── models/                          # Serialized champion models and metadata
 │   ├── anomaly_metadata.json        # Isolation Forest calibration parameters

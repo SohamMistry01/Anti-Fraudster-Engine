@@ -7,6 +7,7 @@ grounding verification, and human-in-the-loop investigator approval checkpoints.
 import json
 import logging
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
@@ -337,7 +338,40 @@ def build_investigation_graph() -> StateGraph:
     workflow.add_edge("revise_report", "validate_grounding")
     workflow.add_edge("checkpoint_approval", END)
 
-    return workflow.compile()
+    compiled = workflow.compile()
+    save_graph_image_if_needed(compiled)
+    return compiled
+
+
+def save_graph_image_if_needed(compiled_graph=None, output_path: Optional[Path] = None) -> Optional[Path]:
+    """Save the state graph visualization image to miscellaneous/ if not already present.
+
+    Ensures the graph diagram is generated once and skipped if already saved.
+    """
+    if output_path is None:
+        project_root = Path(__file__).resolve().parent.parent.parent
+        output_dir = project_root / "miscellaneous"
+        output_path = output_dir / "investigation_agent_graph.png"
+    else:
+        output_path = Path(output_path)
+        output_dir = output_path.parent
+
+    # If the file is already present, do not regenerate
+    if output_path.exists():
+        return output_path
+
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if compiled_graph is None:
+            compiled_graph = get_investigation_graph()
+        g = compiled_graph.get_graph()
+        png_bytes = g.draw_mermaid_png()
+        output_path.write_bytes(png_bytes)
+        logger.info("Saved investigation agent state graph image to %s", output_path)
+        return output_path
+    except Exception as exc:
+        logger.warning("Could not export graph image to %s: %s", output_path, exc)
+        return None
 
 
 # Cached compiled graph singleton
