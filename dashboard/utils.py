@@ -97,6 +97,56 @@ def inject_custom_styles() -> None:
         font-weight: 500;
     }
 
+    /* Triage Diagnostics & Investigation Metrics */
+    .st-key-triage_diagnostics [data-testid="stMetricValue"],
+    .st-key-triage_diagnostics [data-testid="stMetricValue"] > div,
+    .st-key-triage-diagnostics [data-testid="stMetricValue"],
+    .st-key-triage-diagnostics [data-testid="stMetricValue"] > div,
+    .st-key-investigation_recommendations [data-testid="stMetricValue"],
+    .st-key-investigation_recommendations [data-testid="stMetricValue"] > div,
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricValue"],
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricValue"] > div {
+        font-size: 1.15rem !important;
+        font-weight: 700 !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        line-height: 1.25 !important;
+    }
+
+    .st-key-triage_diagnostics [data-testid="stMetricLabel"],
+    .st-key-triage-diagnostics [data-testid="stMetricLabel"],
+    .st-key-investigation_recommendations [data-testid="stMetricLabel"],
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricLabel"] {
+        font-size: 0.82rem !important;
+    }
+
+    .st-key-triage_diagnostics [data-testid="stMetricDelta"],
+    .st-key-triage-diagnostics [data-testid="stMetricDelta"],
+    .st-key-investigation_recommendations [data-testid="stMetricDelta"],
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricDelta"] {
+        font-size: 0.78rem !important;
+    }
+
+    /* Diagnostic Overview Cards */
+    .st-key-diagnostic_overview_cards .metric-card-value,
+    .diagnostic-overview-cards .metric-card-value {
+        font-size: 1.15rem !important;
+        font-weight: 700 !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        line-height: 1.25 !important;
+    }
+
+    .st-key-diagnostic_overview_cards .metric-card-title,
+    .diagnostic-overview-cards .metric-card-title {
+        font-size: 0.78rem !important;
+    }
+
+    .st-key-diagnostic_overview_cards .metric-card-sub,
+    .diagnostic-overview-cards .metric-card-sub {
+        font-size: 0.75rem !important;
+    }
+
     /* Badges */
     .badge {
         display: inline-block;
@@ -225,13 +275,15 @@ def render_metric_card(
     subtitle: str = "",
     icon: str = "📊",
     border_color: Optional[str] = None,
+    font_size: Optional[str] = None,
 ) -> None:
     """Render an aesthetically pleasing glassmorphic metric card."""
     border_style = f"border-color: {border_color};" if border_color else ""
+    value_style = f"font-size: {font_size};" if font_size else ""
     html = f"""
     <div class="metric-card-container" style="{border_style}">
         <div class="metric-card-title">{icon} {title}</div>
-        <div class="metric-card-value">{value}</div>
+        <div class="metric-card-value" style="{value_style}">{value}</div>
         <div class="metric-card-sub">{subtitle}</div>
     </div>
     """

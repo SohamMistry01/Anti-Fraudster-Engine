@@ -121,46 +121,72 @@ plots = assessment.get("plots", {})
 # =============================================================================
 st.markdown(f"### **Diagnostic Overview: {tx_label}**")
 
-top_c1, top_c2, top_c3, top_c4 = st.columns(4)
-with top_c1:
-    render_metric_card(
-        title="Supervised P(Fraud)",
-        value=f"{supervised['fraud_probability']:.4f}",
-        subtitle=f"Tier: {supervised['risk_category']}",
-        icon="🧠",
-        border_color="#ef4444" if supervised['fraud_probability'] >= 0.182 else "#10b981",
-    )
-with top_c2:
-    render_metric_card(
-        title="Anomaly Score",
-        value=f"{anomaly['anomaly_score']:.4f}",
-        subtitle=f"Tier: {anomaly['anomaly_tier']}",
-        icon="📡",
-        border_color="#a855f7" if anomaly['anomaly_score'] >= 0.6 else "#64748b",
-    )
-with top_c3:
-    render_metric_card(
-        title="Operational Quadrant",
-        value=quadrant.replace("_", " "),
-        subtitle="Policy Routing",
-        icon="🧭",
-        border_color="#3b82f6",
-    )
-with top_c4:
-    render_metric_card(
-        title="Recommended Action",
-        value=action,
-        subtitle="Decision Engine",
-        icon="⚡",
-        border_color="#10b981" if action == "APPROVE" else "#ef4444",
-    )
+st.markdown(
+    """
+    <style>
+    .st-key-diagnostic_overview_cards .metric-card-value {
+        font-size: 1.15rem !important;
+        font-weight: 700 !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        line-height: 1.25 !important;
+    }
+    .st-key-diagnostic_overview_cards .metric-card-title {
+        font-size: 0.78rem !important;
+    }
+    .st-key-diagnostic_overview_cards .metric-card-sub {
+        font-size: 0.75rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.container(key="diagnostic_overview_cards"):
+    top_c1, top_c2, top_c3, top_c4 = st.columns(4)
+    with top_c1:
+        render_metric_card(
+            title="Supervised P(Fraud)",
+            value=f"{supervised['fraud_probability']:.4f}",
+            subtitle=f"Tier: {supervised['risk_category']}",
+            icon="🧠",
+            border_color="#ef4444" if supervised['fraud_probability'] >= 0.182 else "#10b981",
+            font_size="1.15rem",
+        )
+    with top_c2:
+        render_metric_card(
+            title="Anomaly Score",
+            value=f"{anomaly['anomaly_score']:.4f}",
+            subtitle=f"Tier: {anomaly['anomaly_tier']}",
+            icon="📡",
+            border_color="#a855f7" if anomaly['anomaly_score'] >= 0.6 else "#64748b",
+            font_size="1.15rem",
+        )
+    with top_c3:
+        render_metric_card(
+            title="Operational Quadrant",
+            value=quadrant.replace("_", " "),
+            subtitle="Policy Routing",
+            icon="🧭",
+            border_color="#3b82f6",
+            font_size="1.15rem",
+        )
+    with top_c4:
+        render_metric_card(
+            title="Recommended Action",
+            value=action.replace("_", " ") if isinstance(action, str) else action,
+            subtitle="Decision Engine",
+            icon="⚡",
+            border_color="#10b981" if action == "APPROVE" else "#ef4444",
+            font_size="1.15rem",
+        )
 
 st.write("")
 
 # =============================================================================
 # SHAP WATERFALL & DUAL-SIGNAL GAUGE
 # =============================================================================
-col_left, col_right = st.columns([3, 2], gap="large")
+col_left, col_right = st.columns([1, 1], gap="large")
 
 with col_left:
     st.markdown("#### **TreeSHAP Feature Attribution (Waterfall Plot)**")
@@ -197,10 +223,16 @@ with col_right:
     fig_gauge.add_trace(go.Indicator(
         mode="gauge+number",
         value=supervised["fraud_probability"] * 100,
-        title={'text': "P(Fraud) Supervised (%)", 'font': {'size': 14, 'color': '#94a3b8'}},
-        domain={'x': [0, 0.48], 'y': [0, 1]},
+        number={'font': {'size': 22, 'color': '#f8fafc', 'family': 'Plus Jakarta Sans'}},
+        title={'text': "P(Fraud) Supervised (%)", 'font': {'size': 12, 'color': '#94a3b8', 'family': 'Plus Jakarta Sans'}},
+        domain={'x': [0.0, 0.43], 'y': [0, 1]},
         gauge={
-            'axis': {'range': [0, 100], 'tickcolor': "#94a3b8"},
+            'axis': {
+                'range': [0, 100],
+                'tickvals': [0, 50, 100],
+                'tickfont': {'size': 9, 'color': '#94a3b8'},
+                'tickcolor': "#94a3b8",
+            },
             'bar': {'color': "#ef4444" if supervised["fraud_probability"] >= 0.5 else "#3b82f6"},
             'threshold': {
                 'line': {'color': "#f97316", 'width': 3},
@@ -212,10 +244,16 @@ with col_right:
     fig_gauge.add_trace(go.Indicator(
         mode="gauge+number",
         value=anomaly["anomaly_score"] * 100,
-        title={'text': "Anomaly Score (%)", 'font': {'size': 14, 'color': '#94a3b8'}},
-        domain={'x': [0.52, 1], 'y': [0, 1]},
+        number={'font': {'size': 22, 'color': '#f8fafc', 'family': 'Plus Jakarta Sans'}},
+        title={'text': "Anomaly Score (%)", 'font': {'size': 12, 'color': '#94a3b8', 'family': 'Plus Jakarta Sans'}},
+        domain={'x': [0.57, 1.0], 'y': [0, 1]},
         gauge={
-            'axis': {'range': [0, 100], 'tickcolor': "#94a3b8"},
+            'axis': {
+                'range': [0, 100],
+                'tickvals': [0, 50, 100],
+                'tickfont': {'size': 9, 'color': '#94a3b8'},
+                'tickcolor': "#94a3b8",
+            },
             'bar': {'color': "#a855f7"},
             'threshold': {
                 'line': {'color': "#eab308", 'width': 3},
@@ -228,8 +266,8 @@ with col_right:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#f8fafc", family="Plus Jakarta Sans"),
-        height=260,
-        margin=dict(t=30, b=10, l=10, r=10),
+        height=220,
+        margin=dict(t=25, b=10, l=10, r=10),
     )
     st.plotly_chart(fig_gauge, use_container_width=True)
 

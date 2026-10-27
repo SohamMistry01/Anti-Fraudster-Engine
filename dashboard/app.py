@@ -406,13 +406,39 @@ with sim_col2:
 
         # Display Result Card
         st.markdown("#### **Triage Diagnostics**")
-        res_col1, res_col2 = st.columns(2)
-        with res_col1:
-            st.metric("P(Fraud) Supervised", f"{p_fraud:.4f}", delta=category)
-            st.metric("Risk Category", category)
-        with res_col2:
-            st.metric("Anomaly Score (IForest)", f"{a_score:.4f}", delta=anomaly["anomaly_tier"])
-            st.metric("Operational Quadrant", quadrant.replace("_", " "))
+        st.markdown(
+            """
+            <style>
+            .st-key-triage_diagnostics [data-testid="stMetricValue"],
+            .st-key-triage_diagnostics [data-testid="stMetricValue"] > div,
+            .st-key-triage-diagnostics [data-testid="stMetricValue"],
+            .st-key-triage-diagnostics [data-testid="stMetricValue"] > div {
+                font-size: 1.15rem !important;
+                font-weight: 700 !important;
+                white-space: normal !important;
+                word-break: break-word !important;
+                line-height: 1.25 !important;
+            }
+            .st-key-triage_diagnostics [data-testid="stMetricLabel"],
+            .st-key-triage-diagnostics [data-testid="stMetricLabel"] {
+                font-size: 0.82rem !important;
+            }
+            .st-key-triage_diagnostics [data-testid="stMetricDelta"],
+            .st-key-triage-diagnostics [data-testid="stMetricDelta"] {
+                font-size: 0.78rem !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.container(key="triage_diagnostics"):
+            res_col1, res_col2 = st.columns(2)
+            with res_col1:
+                st.metric("P(Fraud) Supervised", f"{p_fraud:.4f}", delta=category)
+                st.metric("Risk Category", category)
+            with res_col2:
+                st.metric("Anomaly Score (IForest)", f"{a_score:.4f}", delta=anomaly["anomaly_tier"])
+                st.metric("Operational Quadrant", quadrant.replace("_", " "))
 
         if triage_res["alert_created"]:
             alt = triage_res["alert"]

@@ -50,6 +50,32 @@ st.set_page_config(
 
 inject_custom_styles()
 
+st.markdown(
+    """
+    <style>
+    .st-key-investigation_recommendations [data-testid="stMetricValue"],
+    .st-key-investigation_recommendations [data-testid="stMetricValue"] > div,
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricValue"],
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricValue"] > div {
+        font-size: 1.15rem !important;
+        font-weight: 700 !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        line-height: 1.25 !important;
+    }
+    .st-key-investigation_recommendations [data-testid="stMetricLabel"],
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricLabel"] {
+        font-size: 0.82rem !important;
+    }
+    .st-key-investigation_recommendations [data-testid="stMetricDelta"],
+    .st-key-prediction_snapshot_metrics [data-testid="stMetricDelta"] {
+        font-size: 0.78rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.markdown('<div class="hero-title">💼 Investigation Case Workbench</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="hero-subtitle">'
@@ -248,13 +274,14 @@ with st.container():
                 unsafe_allow_html=True,
             )
 
-            rec_c1, rec_c2, rec_c3 = st.columns([1, 1, 1])
-            with rec_c1:
-                st.metric("Recommended Verdict", rep.get("recommended_verdict", "UNKNOWN"))
-            with rec_c2:
-                st.metric("Recommended Mitigation", rep.get("recommended_action", "UNKNOWN"))
-            with rec_c3:
-                st.metric("Grounding Audit Status", "PASSED (0 Hallucinations)" if v_passed else "FLAGGED")
+            with st.container(key="investigation_recommendations"):
+                rec_c1, rec_c2, rec_c3 = st.columns([1, 1, 1])
+                with rec_c1:
+                    st.metric("Recommended Verdict", rep.get("recommended_verdict", "UNKNOWN"))
+                with rec_c2:
+                    st.metric("Recommended Mitigation", rep.get("recommended_action", "UNKNOWN"))
+                with rec_c3:
+                    st.metric("Grounding Audit Status", "PASSED (0 Hallucinations)" if v_passed else "FLAGGED")
 
             st.markdown("#### 🧠 **Synthesized Behavioral Findings**")
             st.markdown(
@@ -413,15 +440,16 @@ with left_col:
 
     orig = case_dict.get("original_prediction", {})
 
-    snap_c1, snap_c2 = st.columns(2)
-    with snap_c1:
-        st.metric("Original P(Fraud)", f"{orig.get('fraud_probability', 0.0):.4f}")
-        st.metric("Risk Category", orig.get("risk_category", "UNKNOWN"))
-        st.metric("Model Version", orig.get("model_version", "1.0.0"))
-    with snap_c2:
-        st.metric("Original Anomaly Score", f"{orig.get('anomaly_score', 0.0):.4f}")
-        st.metric("Anomaly Tier", orig.get("anomaly_tier", "UNKNOWN"))
-        st.metric("Threshold Used", f"{orig.get('threshold_used', 0.5):.3f} ({orig.get('threshold_name', 'default')})")
+    with st.container(key="prediction_snapshot_metrics"):
+        snap_c1, snap_c2 = st.columns(2)
+        with snap_c1:
+            st.metric("Original P(Fraud)", f"{orig.get('fraud_probability', 0.0):.4f}")
+            st.metric("Risk Category", orig.get("risk_category", "UNKNOWN"))
+            st.metric("Model Version", orig.get("model_version", "1.0.0"))
+        with snap_c2:
+            st.metric("Original Anomaly Score", f"{orig.get('anomaly_score', 0.0):.4f}")
+            st.metric("Anomaly Tier", orig.get("anomaly_tier", "UNKNOWN"))
+            st.metric("Threshold Used", f"{orig.get('threshold_used', 0.5):.3f} ({orig.get('threshold_name', 'default')})")
 
     st.markdown(f"**Operational Quadrant:** `{orig.get('operational_quadrant', 'UNKNOWN')}`")
 
