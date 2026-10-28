@@ -55,12 +55,14 @@ class AnomalyDetector:
         self.min_score = float(calib.get("min_score", -0.15))
         self.max_score = float(calib.get("max_score", 0.35))
         self.decision_offset = float(calib.get("decision_offset", 0.0))
+        self.features = self.metadata.get("features", FEATURE_NAMES)
 
         logger.info(
-            "AnomalyDetector initialized (range=[%.4f, %.4f], offset=%.4f)",
+            "AnomalyDetector initialized (range=[%.4f, %.4f], offset=%.4f, features=%d)",
             self.min_score,
             self.max_score,
             self.decision_offset,
+            len(self.features),
         )
 
     def _load_or_fit_model(self) -> tuple[IsolationForest, Dict[str, Any]]:
@@ -177,9 +179,11 @@ class AnomalyDetector:
             expected_features=FEATURE_NAMES,
         )
         X_df = pd.DataFrame(X, columns=FEATURE_NAMES)
+        features_to_use = getattr(self, "features", FEATURE_NAMES)
+        X_input = X_df[features_to_use] if features_to_use else X_df
 
-        raw_decision = float(self.model.decision_function(X_df)[0])
-        pred_label = int(self.model.predict(X_df)[0])  # -1 for anomaly, +1 for inlier
+        raw_decision = float(self.model.decision_function(X_input)[0])
+        pred_label = int(self.model.predict(X_input)[0])  # -1 for anomaly, +1 for inlier
         is_anomaly = bool(pred_label == -1 or raw_decision < 0.0)
 
         norm_score = self.normalize_score(raw_decision)
@@ -222,9 +226,11 @@ class AnomalyDetector:
             expected_features=FEATURE_NAMES,
         )
         X_df = pd.DataFrame(X, columns=FEATURE_NAMES)
+        features_to_use = getattr(self, "features", FEATURE_NAMES)
+        X_input = X_df[features_to_use] if features_to_use else X_df
 
-        raw_decisions = self.model.decision_function(X_df)
-        pred_labels = self.model.predict(X_df)
+        raw_decisions = self.model.decision_function(X_input)
+        pred_labels = self.model.predict(X_input)
 
         results: List[Dict[str, Any]] = []
         anomaly_count = 0

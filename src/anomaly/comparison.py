@@ -71,10 +71,11 @@ def compare_models(
 
     # 2. Unsupervised Predictions (Isolation Forest)
     logger.info("Computing Isolation Forest anomaly scores...")
-    raw_iso_scores = iso_d.model.decision_function(X_test)
+    features_to_use = getattr(iso_d, "features", FEATURE_NAMES)
+    raw_iso_scores = iso_d.model.decision_function(X_test[features_to_use])
     # Higher raw anomaly score means more anomalous
     iso_anomaly_scores = np.array([iso_d.normalize_score(s) for s in raw_iso_scores])
-    iso_preds = (iso_d.model.predict(X_test) == -1).astype(int)
+    iso_preds = (iso_d.model.predict(X_test[features_to_use]) == -1).astype(int)
 
     # 3. Supervised Metrics
     xgb_pr_auc = float(average_precision_score(y_test, xgb_probs))
