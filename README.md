@@ -13,7 +13,7 @@
 
 A comprehensive, enterprise-ready credit card fraud detection system designed for high-throughput scoring, local model explainability, unsupervised anomaly detection, prioritised alert queues, auditable investigation workflows, and an autonomous Agentic Investigation Layer powered by LangGraph and Groq open-source LLMs.
 
-Built on the European cardholder benchmark dataset (284,807 transactions with an extreme 0.172% fraud class imbalance), the system features a champion **XGBoost Classifier** (PR-AUC **0.8209**), an independent **Isolation Forest** anomaly baseline (ROC-AUC **0.9422**), local feature attributions via **TreeSHAP** with interactive **Plotly** visualizations, a stateful **LangGraph 1.2.16** autonomous investigation layer using Groq open-source models (`openai/gpt-oss-120b` and `20b`), a low-latency **FastAPI** REST service, and an interactive **Streamlit** investigation workspace powered by **PostgreSQL / SQLAlchemy** and **Alembic** schema migrations.
+Built on the European cardholder benchmark dataset (284,807 transactions with an extreme 0.172% fraud class imbalance), the system features a champion **XGBoost Classifier** (PR-AUC **0.8209**, ROC-AUC **0.9766**), an optimized **Isolation Forest Anomaly Detector** (PR-AUC **0.5614**, ROC-AUC **0.9308** with noise subspace pruning and 4 operational modes), local feature attributions via **TreeSHAP** with interactive **Plotly** visualizations, a stateful **LangGraph 1.2.16** autonomous investigation layer using Groq open-source models (`openai/gpt-oss-120b` and `20b`), a low-latency **FastAPI** REST service, and an interactive **Streamlit** investigation workspace powered by **PostgreSQL / SQLAlchemy** and **Alembic** schema migrations.
 
 ---
 
@@ -89,19 +89,21 @@ flowchart TD
 ### Supervised Champion: XGBoost Classifier
 The primary decision model is a gradient-boosted decision tree ensemble trained with cost-sensitive weighting (`scale_pos_weight`) to counter the extreme 578:1 legitimate-to-fraud class imbalance. It is serialized in native XGBoost JSON format (`models/xgb_fraud_detector.json`) and joblib bundle (`models/xgb_fraud_detector.joblib`), ensuring zero platform drift.
 
-### Unsupervised Baseline: Isolation Forest
-An independent outlier detector (`models/isolation_forest.joblib`) trained on unlabeled transactions to isolate anomalous multivariate coordinate vectors. Rather than optimizing for historical fraud labels, it isolates rare coordinate permutations, catching novel fraud patterns that do not match historical templates.
+### Optimized Unsupervised Anomaly Detector: Isolation Forest
+An independent outlier detector (`models/isolation_forest.joblib`) engineered to isolate anomalous multivariate vectors without relying on fraud labels. Following systematic optimization in Part 3 ([`notebooks/part3_anomaly_detection_optimization.md`](file:///e:/Fraud-Detection/notebooks/part3_anomaly_detection_optimization.md)), the model prunes 24 non-informative noise dimensions to focus on the top anomaly subspace (`V17`, `V14`, `V12`, `V10`, `V16`, `V3`) with `max_samples=512`, elevating PR-AUC from a baseline of **0.1557** to **0.5614** (+260%).
 
 ### Empirical Leaderboard on Holdout Test Set (56,746 Transactions, 95 Frauds)
 
-| Metric | XGBoost (Supervised Champion) | Isolation Forest (Unsupervised Baseline) | Variance ($\Delta$) |
-| :--- | :---: | :---: | :--- |
-| **Precision-Recall AUC (PR-AUC)** | **0.8209** | 0.1557 | **+0.6652** (Supervised Champion) |
-| **Receiver Operating Characteristic (ROC-AUC)** | **0.9766** | 0.9422 | **+0.0344** (Supervised Champion) |
-| **Precision** | **86.52%** | 26.47% | **+60.05%** |
-| **Recall** | **81.05%** | 28.42% | **+52.63%** |
-| **F1-Score** | **0.8370** | 0.2741 | **+0.5629** |
-| **Inference Latency (Single Sample)** | **< 3.5 ms** | **< 2.1 ms** | Optimized Vectorized Scoring |
+| Metric | XGBoost (Supervised Champion) | Isolation Forest (Optimized Champion) | Isolation Forest (Baseline Un-tuned) | Optimization Gain ($\Delta$) |
+| :--- | :---: | :---: | :---: | :--- |
+| **Precision-Recall AUC (PR-AUC)** | **0.8209** | **0.5614** | 0.1557 | **+0.4057 (+260.6%)** |
+| **Receiver Operating Characteristic (ROC-AUC)** | **0.9766** | **0.9308** | 0.9422 | Robust Latent Separation |
+| **Recall (Fraud Caught)** | **81.05%** (77/95) | **62.11%** (59/95) *(Balanced)*<br/>**73.68%** (70/95) *(High-Recall)* | 28.42% (27/95) | **+45.26%** (High-Recall Mode) |
+| **Precision** | **86.52%** | **59.00%** *(Balanced)*<br/>**48.61%** *(High-Recall)* | 26.47% | **+32.53%** (Balanced Mode) |
+| **F1-Score** | **0.8370** | **0.6051** *(Balanced)* | 0.2741 | **+0.3310 (+120.8%)** |
+| **False Alarms (FP)** | **12** | **41** *(Balanced)* | 75 | **-45.3% False Alarm Reduction** |
+| **Simulated Business Loss** | **$2,736.00** | **$3,972.00** *(High-Recall)*<br/>**$3,936.00** *(Min-Loss)* | $10,425.00 | **-$6,489.00 (62.2% Cost Cut)** |
+| **Inference Latency (Single Sample)** | **< 3.5 ms** | **< 1.8 ms** | < 2.1 ms | Low-Dimensional Fast Scoring |
 
 ---
 
@@ -181,35 +183,46 @@ $$\text{Anomaly Score} = 1.0 - \frac{s_{\text{raw}} - s_{\min}}{s_{\max} - s_{\m
 
 Where:
 - $s_{\text{raw}}$ is the raw Isolation Forest `decision_function` score (lower scores indicate deeper tree isolation and higher anomaly severity).
-- $s_{\min}$ and $s_{\max}$ are the calibration boundary extremes observed during validation.
+- $s_{\min} = -0.116189$ and $s_{\max} = 0.389574$ are the empirical calibration boundary extremes observed during training on the European cardholder dataset.
 - The score is inverted so that **$0.0$ represents standard in-distribution behavior** and **$1.0$ represents an extreme population outlier**.
+
+### Optimization Breakthrough: Noise Pruning & Tree Tuning (Part 3)
+
+In Part 3 of the project ([`notebooks/part3_anomaly_detection_optimization.md`](file:///e:/Fraud-Detection/notebooks/part3_anomaly_detection_optimization.md)), extensive empirical analysis resolved the primary bottleneck of standard Isolation Forest:
+1. **Curse of Dimensionality in Tree Splitting:** In 30 dimensions with uniform random feature selection, $80\%$ of splits fell on non-informative Gaussian noise features, diluting tree depth and masking genuine anomalies. Restricting splits to the **Top 6 anomaly-discriminative subspace** (`V17`, `V14`, `V12`, `V10`, `V16`, `V3`) propelled PR-AUC from **0.1557 to 0.5313 (+241%)**.
+2. **Subsample Size (`max_samples=512`):** Tuning subsample size prevented fraud clusters from masking each other, achieving **0.5614 PR-AUC**.
+3. **Four Calibrated Operational Modes:**
+   - **Balanced Risk Mode ($\tau = 0.0011$):** Optimal F1 (**0.6051**), capturing **59 frauds** with only **41 false alarms** (Precision: 59.00%, Recall: 62.11%, Simulated Loss: **$5,523.00**).
+   - **High-Recall Optimal Mode ($\tau = 0.0214$):** Optimal F2 (**0.6679**), capturing **70 frauds (73.68% Recall)** with only 74 false alarms (Precision: 48.61%, Simulated Loss: **$3,972.00**).
+   - **Min Financial Loss Mode ($\tau = 0.0637$):** Captures **73 frauds (76.84% Recall)**, slashing net business loss to **$3,936.00** (**a 62% cost reduction** compared to the $10,425.00 baseline).
+   - **Default Mode ($\tau = 0.0000$):** Catches 57 frauds with 41 false alarms (Simulated Loss: $5,823.00).
 
 ### Signal Concordance & Overlap Analysis
 
-Cross-model analysis on 56,746 unseen holdout transactions reveals critical behavioral dynamics:
+Cross-model analysis on 56,746 unseen holdout transactions reveals critical behavioral dynamics between the supervised classifier (XGBoost) and the unsupervised detector (Isolation Forest):
 
 ```
-                            Isolation Forest (Unsupervised)
-                                     Anomalous (102)
+                            Isolation Forest (Optimized)
+                                     Anomalous (100)
                                    ┌─────────┬─────────┐
-                                   │   74    │   28    │
+                                   │   41    │   59    │
                                    │ Novel   │ Both    │
                                    │ Outlier │ Agree   │
                  Non-Fraud (56,651)├─────────┼─────────┤ Fraud (95)
-                                   │ 56,577  │   50    │
+                                   │ 56,610  │   36    │
                                    │ Normal  │ Subtle  │
                                    │ Legit   │ Fraud   │
                                    └─────────┴─────────┘
-                                     Normal (56,644)
+                                     Normal (56,646)
                                   XGBoost (Supervised)
 ```
 
-1. **Both Models Agree (28 transactions)**:
-   - Yields **96.4% Precision** (27 of 28 are confirmed ground-truth fraud). These represent blatant, large-scale attacks with extreme multivariate deviations.
-2. **Supervised Only / Subtle Fraud (50 transactions)**:
-   - Ground-truth frauds missed by Isolation Forest. Fraudsters kept individual feature values near normal medians (median transaction amount was only $\$9.82$) to evade global anomaly detection. Only the supervised classifier's non-linear decision boundaries caught them.
-3. **Unsupervised Only / Novel Anomaly (74 transactions)**:
-   - Rare statistical outliers representing unusual transaction patterns that do not match historical fraud vectors. Useful for flagging emerging fraud mechanisms or zero-day behavioral deviations.
+1. **Both Models Agree (59 transactions)**:
+   - Yields **98.3% Precision** (58 of 59 are confirmed ground-truth fraud). These represent blatant, high-confidence attacks with extreme multivariate deviations.
+2. **Supervised Only / Subtle Fraud (36 transactions)**:
+   - Frauds that evade unsupervised outlier isolation by mimicking local median spending habits. Only the supervised classifier's non-linear decision boundaries caught them.
+3. **Unsupervised Only / Novel Anomaly (41 transactions)**:
+   - Rare statistical outliers representing unusual transaction patterns that do not match historical fraud vectors. Crucial for zero-day behavioral deviations and emerging fraud mechanisms.
 
 ---
 
@@ -586,12 +599,21 @@ Fraud-Detection/
 │   └── investigation_agent_graph.png # Compiled LangGraph state machine visualization
 │
 ├── models/                          # Serialized champion models and metadata
-│   ├── anomaly_metadata.json        # Isolation Forest calibration parameters
-│   ├── isolation_forest.joblib      # Champion unsupervised anomaly detector
+│   ├── anomaly_metadata.json        # Isolation Forest calibration parameters & operational thresholds
+│   ├── isolation_forest.joblib      # Champion optimized Isolation Forest (Top 6 subspace)
+│   ├── isolation_forest_optimized.joblib # Serialized artifact of optimized detector
 │   ├── model_metadata.json          # XGBoost metadata, operational thresholds, top features
 │   ├── preprocessor.joblib          # RobustScaler transformer for Amount & Time
 │   ├── xgb_fraud_detector.joblib    # Serialized XGBoost Classifier
 │   └── xgb_fraud_detector.json      # Native JSON format XGBoost booster
+│
+├── notebooks/                       # Research, benchmarking, and optimization workflows
+│   ├── fraud_detection_part1.ipynb  # Part 1: Exploratory analysis & leak-free preprocessing
+│   ├── fraud_detection_part2.ipynb  # Part 2: Supervised model evaluation & XGBoost selection
+│   ├── fraud_detection_part3.ipynb  # Part 3: Isolation Forest subspace optimization
+│   ├── part1_data_analysis.md       # Technical report for Part 1
+│   ├── part2_model_evaluation.md    # Technical report for Part 2
+│   └── part3_anomaly_detection_optimization.md # Technical report for Part 3
 │
 ├── src/                             # Core Python application modules
 │   ├── agents/                      # Agentic Investigation Layer (LangGraph + Groq OSS)
