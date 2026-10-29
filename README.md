@@ -5,7 +5,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.42+-FF4B4B.svg)](https://streamlit.io)
 [![SQLAlchemy 2.0](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
 [![Alembic](https://img.shields.io/badge/Alembic-1.14+-orange.svg)](https://alembic.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/tests-96%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-97%20passed-brightgreen.svg)](tests/)
 [![PR-AUC](https://img.shields.io/badge/PR--AUC-0.8209-success.svg)](models/)
 [![ROC-AUC](https://img.shields.io/badge/ROC--AUC-0.9766-success.svg)](models/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2+-purple.svg)](https://langchain-ai.github.io/langgraph/)
@@ -558,6 +558,10 @@ The **Fraud Pattern Analysis Agent** ([`src/agents/pattern_agent.py`](src/agents
 #### Architecture & Stateful LangGraph Workflow
 
 The pattern analysis workflow is modeled as a compiled state graph (`StateGraph[PatternAnalysisState]`) following a 6-stage sequential pipeline:
+
+<p align="center">
+  <img src="miscellaneous/pattern_agent_graph.png" alt="Fraud Pattern Analysis Agent State Graph" width="340"/>
+</p>
 
 ```mermaid
 flowchart TD

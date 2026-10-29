@@ -37,6 +37,7 @@ from src.agents.pattern_agent import (
     node_synthesize_findings,
     node_validate_evidence,
     run_pattern_analysis,
+    save_pattern_graph_image_if_needed,
     synthesize_cohort_and_error_trends,
     synthesize_executive_summary,
 )
@@ -347,6 +348,16 @@ def test_build_pattern_analysis_graph():
 
     compiled = get_pattern_analysis_graph()
     assert compiled is not None
+
+
+def test_save_pattern_graph_image_if_needed(tmp_path):
+    """Verify state graph visualization PNG is generated and written to disk."""
+    out_path = tmp_path / "test_pattern_graph.png"
+    saved = save_pattern_graph_image_if_needed(output_path=out_path)
+    assert saved == out_path
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
 
 
 def test_graph_node_sequential_flow(sample_historical_records: List[Dict[str, Any]]):

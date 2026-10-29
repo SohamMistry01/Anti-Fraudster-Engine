@@ -36,6 +36,7 @@ from src.agents.pattern_agent import (
     formulate_pattern_findings,
     get_pattern_analysis_graph,
     run_pattern_analysis,
+    save_pattern_graph_image_if_needed,
     synthesize_cohort_and_error_trends,
     synthesize_executive_summary,
 )
@@ -143,6 +144,7 @@ __all__ = [
     "apply_triage_decisions",
     "build_pattern_analysis_graph",
     "get_pattern_analysis_graph",
+    "save_pattern_graph_image_if_needed",
     "run_pattern_analysis",
     "compute_cohort_statistics",
     "detect_statistical_shifts",
