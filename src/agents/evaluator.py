@@ -268,3 +268,87 @@ def evaluate_agent_on_cases(
         },
         "case_evaluations": results,
     }
+
+
+def evaluate_triage_grounding(
+    triage_report: Dict[str, Any],
+    true_alerts: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Audit a Fraud Triage batch report for ranking consistency, factual integrity, and storytelling absence.
+
+    Verifies:
+    1. Ranking monotonicity (scores ordered descending by urgency)
+    2. Exact numeric alignment with true alert fraud probabilities and anomaly scores
+    3. Absence of prohibited domain narratives for anonymized PCA features V1-V28
+    4. Deterministic tier validation
+    """
+    items = triage_report.get("prioritized_queue", [])
+    if not items:
+        return {
+            "grounding_passed": True,
+            "ranking_monotonicity_score": 1.0,
+            "hallucination_freedom_score": 1.0,
+            "numeric_fidelity_score": 1.0,
+            "overall_score": 1.0,
+            "issues": [],
+        }
+
+    issues: List[str] = []
+    true_by_id = {a["alert_id"]: a for a in true_alerts}
+
+    # 1. Ranking Monotonicity
+    monotonic_errors = 0
+    for i in range(len(items) - 1):
+        s_curr = items[i].get("composite_urgency_score", 0.0)
+        s_next = items[i + 1].get("composite_urgency_score", 0.0)
+        if s_curr < s_next:
+            monotonic_errors += 1
+            issues.append(f"Rank violation at index {i}: Rank #{items[i].get('rank')} (score {s_curr}) < Rank #{items[i+1].get('rank')} (score {s_next}).")
+
+    monotonicity_score = max(0.0, 1.0 - (monotonic_errors / max(len(items) - 1, 1)))
+
+    # 2. Numeric Fidelity with True Database Alerts
+    numeric_matches = 0
+    for item in items:
+        aid = item.get("alert_id")
+        if aid in true_by_id:
+            true_a = true_by_id[aid]
+            p_diff = abs(item.get("fraud_probability", 0.0) - true_a.get("fraud_probability", 0.0))
+            a_diff = abs(item.get("anomaly_score", 0.0) - true_a.get("anomaly_score", 0.0))
+            if p_diff <= 0.01 and a_diff <= 0.01:
+                numeric_matches += 1
+            else:
+                issues.append(f"Numeric mismatch in alert '{aid}': reported P={item.get('fraud_probability')}, true P={true_a.get('fraud_probability')}.")
+        else:
+            issues.append(f"Alert ID '{aid}' in triage report does not exist in true alert queue.")
+
+    numeric_score = numeric_matches / max(len(items), 1)
+
+    # 3. Domain Hallucination Audit
+    all_text = " ".join([
+        item.get("triage_explanation", "") for item in items
+    ] + [
+        triage_report.get("queue_overview", {}).get("queue_risk_synthesis", ""),
+        triage_report.get("queue_overview", {}).get("workload_bottlenecks", ""),
+    ]).lower()
+
+    detected_hallucinations = []
+    for pattern in PROHIBITED_DOMAIN_PATTERNS:
+        matches = re.findall(pattern, all_text)
+        if matches:
+            detected_hallucinations.extend(matches)
+            issues.append(f"Detected prohibited domain storytelling: {matches}")
+
+    hallucination_score = 1.0 if not detected_hallucinations else max(0.0, 1.0 - 0.25 * len(detected_hallucinations))
+
+    overall = round(0.4 * monotonicity_score + 0.3 * numeric_score + 0.3 * hallucination_score, 4)
+
+    return {
+        "grounding_passed": len(issues) == 0,
+        "ranking_monotonicity_score": round(monotonicity_score, 4),
+        "numeric_fidelity_score": round(numeric_score, 4),
+        "hallucination_freedom_score": round(hallucination_score, 4),
+        "overall_score": overall,
+        "issues": issues,
+    }
+

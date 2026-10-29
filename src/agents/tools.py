@@ -134,3 +134,112 @@ INVESTIGATION_TOOLS = [
     get_anomaly_score,
     get_case_history,
 ]
+
+
+# =============================================================================
+# TRIAGE & PRIORITIZATION RETRIEVAL TOOLS
+# =============================================================================
+
+DEFAULT_INVESTIGATOR_ROSTER: List[Dict[str, Any]] = [
+    {
+        "investigator_id": "analyst_mistry",
+        "name": "Soham Mistry",
+        "role": "Senior Fraud Specialist",
+        "specialties": ["TIER_1_CRITICAL", "NOVEL_ANOMALY_OUTLIER", "HIGH_EXPOSURE"],
+        "max_capacity": 10,
+        "is_available": True,
+    },
+    {
+        "investigator_id": "lead_analyst",
+        "name": "Sarah Connor",
+        "role": "Lead Investigator",
+        "specialties": ["TIER_1_CRITICAL", "CONFIRMED_HIGH_RISK", "COMPLEX_ESCALATION"],
+        "max_capacity": 8,
+        "is_available": True,
+    },
+    {
+        "investigator_id": "analyst_chen",
+        "name": "David Chen",
+        "role": "Fraud Operations Analyst",
+        "specialties": ["TIER_2_HIGH", "TIER_3_MEDIUM", "SUBTLE_IN_DISTRIBUTION_FRAUD"],
+        "max_capacity": 12,
+        "is_available": True,
+    },
+    {
+        "investigator_id": "analyst_patel",
+        "name": "Amina Patel",
+        "role": "Junior Triage Analyst",
+        "specialties": ["TIER_3_MEDIUM", "TIER_4_LOW", "FAST_TRACK_VERIFICATION"],
+        "max_capacity": 15,
+        "is_available": True,
+    },
+]
+
+
+@tool
+def get_pending_alerts_for_triage(limit: int = 15, status: Optional[str] = "NEW") -> List[Dict[str, Any]]:
+    """Retrieve pending or unescalated alerts from the database queue for triage evaluation.
+
+    Args:
+        limit: Maximum number of alerts to fetch (default: 15).
+        status: Status filter ('NEW', 'ESCALATED', or None for all active alerts).
+
+    Returns:
+        List of alert dictionaries containing multi-signal scores and payload attributes.
+    """
+    with get_db_context() as db:
+        s_val = None if status in (None, "ALL", "") else status.upper()
+        alerts, _ = AlertRepository.list_alerts(db=db, status=s_val, limit=limit)
+        return [a.to_dict() for a in alerts]
+
+
+@tool
+def get_investigator_workloads() -> List[Dict[str, Any]]:
+    """Retrieve current active case counts, capacity limits, and utilization for all fraud investigators.
+
+    Returns:
+        List of investigator workload dictionaries with real-time active case counts and capacity ratios.
+    """
+    from sqlalchemy import func
+    from src.cases.models import CaseStatus, InvestigationCase
+
+    active_statuses = [
+        CaseStatus.OPEN.value,
+        CaseStatus.UNDER_INVESTIGATION.value,
+        CaseStatus.PENDING_CUSTOMER.value,
+    ]
+
+    with get_db_context() as db:
+        counts = dict(
+            db.query(InvestigationCase.assigned_analyst, func.count(InvestigationCase.id))
+            .filter(InvestigationCase.status.in_(active_statuses))
+            .group_by(InvestigationCase.assigned_analyst)
+            .all()
+        )
+
+    roster: List[Dict[str, Any]] = []
+    for inv in DEFAULT_INVESTIGATOR_ROSTER:
+        inv_id = inv["investigator_id"]
+        active = int(counts.get(inv_id, 0))
+        max_cap = int(inv.get("max_capacity", 10))
+        util = round(active / max(max_cap, 1), 2)
+        roster.append({
+            "investigator_id": inv_id,
+            "name": inv["name"],
+            "role": inv["role"],
+            "specialties": list(inv.get("specialties", [])),
+            "active_cases": active,
+            "max_capacity": max_cap,
+            "capacity_utilization": util,
+            "is_available": inv.get("is_available", True) and active < max_cap,
+        })
+
+    return roster
+
+
+TRIAGE_TOOLS = [
+    get_pending_alerts_for_triage,
+    get_investigator_workloads,
+    get_alert_details,
+]
+

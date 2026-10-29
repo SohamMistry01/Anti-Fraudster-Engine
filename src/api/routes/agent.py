@@ -198,3 +198,107 @@ def check_tools_endpoint(
         "alert_tested": alert_id,
         "tool_health": results,
     }
+
+
+# =============================================================================
+# FRAUD TRIAGE & PRIORITIZATION AGENT ENDPOINTS
+# =============================================================================
+
+class TriggerTriageRequest(BaseModel):
+    """Payload to trigger agentic queue triage and prioritization."""
+    filter_status: Optional[str] = Field(default="NEW", description="Alert status filter (e.g. 'NEW', 'ESCALATED', or 'ALL')")
+    max_alerts: int = Field(default=15, ge=1, le=50, description="Maximum alerts to evaluate and rank")
+    include_workload: bool = Field(default=True, description="Whether to include workload-aware investigator assignment")
+    model_name: Optional[str] = Field(default=DEFAULT_AGENT_MODEL, description="Groq model to use")
+
+
+@router.post(
+    "/agent/triage/run",
+    summary="Trigger Agentic Alert Queue Triage & Prioritization",
+    description=(
+        "Executes stateful LangGraph workflow that retrieves pending alerts, applies deterministic "
+        "multi-signal prioritization, categorizes alerts into operational priority tiers, "
+        "generates grounded explanations, and recommends workload-aware investigator assignments."
+    ),
+)
+def run_triage_endpoint(payload: TriggerTriageRequest = TriggerTriageRequest()) -> Dict[str, Any]:
+    """Execute queue triage agent workflow."""
+    from src.agents.triage_agent import run_queue_triage
+
+    try:
+        result = run_queue_triage(
+            filter_status=payload.filter_status,
+            max_alerts=payload.max_alerts,
+            include_workload=payload.include_workload,
+            model_name=payload.model_name,
+        )
+        return {
+            "status": "success",
+            "data": result,
+        }
+    except Exception as exc:
+        logger.exception("Queue triage agent run failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Triage agent failed: {str(exc)}",
+        )
+
+
+@router.post(
+    "/agent/triage/apply",
+    summary="Apply Supervisor Triage Review Decisions",
+    description="Batch apply approved triage actions, opening cases, assigning investigators, and updating alerts.",
+)
+def apply_triage_decisions_endpoint(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Apply supervisor triage decisions to database."""
+    from src.agents.triage_agent import apply_triage_decisions
+
+    decisions = payload.get("decisions", [])
+    supervisor_id = payload.get("supervisor_id", "fraud_supervisor")
+
+    if not decisions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payload must include a non-empty 'decisions' list.",
+        )
+
+    try:
+        results = apply_triage_decisions(decisions=decisions, supervisor_id=supervisor_id)
+        return {
+            "status": "success",
+            "results": results,
+        }
+    except Exception as exc:
+        logger.exception("Failed to apply triage decisions: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to apply triage decisions: {str(exc)}",
+        )
+
+
+@router.get(
+    "/agent/triage/workloads",
+    summary="Get Real-Time Investigator Workloads",
+    description="Retrieve live investigator active case counts, capacity limits, and utilization ratios.",
+)
+def get_workloads_endpoint() -> Dict[str, Any]:
+    """Fetch current investigator workloads."""
+    from src.agents.tools import get_investigator_workloads
+
+    try:
+        workloads = get_investigator_workloads.invoke({})
+        return {
+            "status": "success",
+            "total_investigators": len(workloads),
+            "investigators": workloads,
+        }
+    except Exception as exc:
+        logger.exception("Failed to retrieve investigator workloads: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Workload retrieval failed: {str(exc)}",
+        )
+
