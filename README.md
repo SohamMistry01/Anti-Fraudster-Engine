@@ -5,15 +5,15 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.42+-FF4B4B.svg)](https://streamlit.io)
 [![SQLAlchemy 2.0](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
 [![Alembic](https://img.shields.io/badge/Alembic-1.14+-orange.svg)](https://alembic.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/tests-68%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-82%20passed-brightgreen.svg)](tests/)
 [![PR-AUC](https://img.shields.io/badge/PR--AUC-0.8209-success.svg)](models/)
 [![ROC-AUC](https://img.shields.io/badge/ROC--AUC-0.9766-success.svg)](models/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2+-purple.svg)](https://langchain-ai.github.io/langgraph/)
 [![Groq](https://img.shields.io/badge/Groq-OSS%20LLMs-orange.svg)](https://groq.com)
 
-A comprehensive, enterprise-ready credit card fraud detection system designed for high-throughput scoring, local model explainability, unsupervised anomaly detection, prioritised alert queues, auditable investigation workflows, and an autonomous Agentic Investigation Layer powered by LangGraph and Groq open-source LLMs.
+A comprehensive, enterprise-ready credit card fraud detection system designed for high-throughput scoring, local model explainability, unsupervised anomaly detection, prioritised alert queues, auditable investigation workflows, and an autonomous multi-agent operational layer powered by LangGraph and Groq open-source LLMs.
 
-Built on the European cardholder benchmark dataset (284,807 transactions with an extreme 0.172% fraud class imbalance), the system features a champion **XGBoost Classifier** (PR-AUC **0.8209**, ROC-AUC **0.9766**), an optimized **Isolation Forest Anomaly Detector** (PR-AUC **0.5614**, ROC-AUC **0.9308** with noise subspace pruning and 4 operational modes), local feature attributions via **TreeSHAP** with interactive **Plotly** visualizations, a stateful **LangGraph 1.2.16** autonomous investigation layer using Groq open-source models (`openai/gpt-oss-120b` and `20b`), a low-latency **FastAPI** REST service, and an interactive **Streamlit** investigation workspace powered by **PostgreSQL / SQLAlchemy** and **Alembic** schema migrations.
+Built on the European cardholder benchmark dataset (284,807 transactions with an extreme 0.172% fraud class imbalance), the system features a champion **XGBoost Classifier** (PR-AUC **0.8209**, ROC-AUC **0.9766**), an optimized **Isolation Forest Anomaly Detector** (PR-AUC **0.5614**, ROC-AUC **0.9308** with noise subspace pruning and 4 operational modes), local feature attributions via **TreeSHAP** with interactive **Plotly** visualizations, two stateful **LangGraph 1.2.16** autonomous AI agents (**Investigation Agent** and **Fraud Triage & Prioritization Agent**) using Groq open-source models (`openai/gpt-oss-120b` and `20b`), a low-latency **FastAPI** REST service with 22 endpoints, and an interactive **Streamlit** workspace powered by **PostgreSQL / SQLAlchemy** and **Alembic** schema migrations.
 
 ---
 
@@ -28,7 +28,13 @@ Built on the European cardholder benchmark dataset (284,807 transactions with an
 7. [Alert Queue & Case Management System](#7-alert-queue--case-management-system)
 8. [Database Schema & Entity-Relationship Architecture](#8-database-schema--entity-relationship-architecture)
 9. [FastAPI REST Service & Endpoints](#9-fastapi-rest-service--endpoints)
-10. [Agentic Investigation Layer (LangChain & LangGraph Orchestration)](#10-agentic-investigation-layer-langchain--langgraph-orchestration)
+10. [Autonomous AI Agents Layer (LangGraph & Groq OSS LLMs)](#10-autonomous-ai-agents-layer-langgraph--groq-oss-llms)
+    - [10.1 Multi-Agent Synergy & Operational Roles](#101-multi-agent-synergy--operational-roles)
+    - [10.2 Fraud Triage & Prioritization Agent](#102-fraud-triage--prioritization-agent)
+    - [10.3 Investigation Agent](#103-investigation-agent)
+    - [10.4 Deterministic Read-Only Tools](#104-deterministic-read-only-tools)
+    - [10.5 Strict Grounding & Anti-Hallucination Guardrails](#105-strict-grounding--anti-hallucination-guardrails)
+    - [10.6 Automated Evaluation Benchmark Suite](#106-automated-evaluation-benchmark-suite)
 11. [Streamlit Interactive Investigation Workspace](#11-streamlit-interactive-investigation-workspace)
 12. [Installation, Setup & Verification](#12-installation-setup--verification)
 13. [Repository Directory Structure](#13-repository-directory-structure)
@@ -69,16 +75,20 @@ flowchart TD
         K2 --> K4[Tamper-Evident Audit Logs Table<br/>Immutable State Change Trail]
     end
 
-    subgraph AGENTS["5. Agentic Investigation Layer (LangGraph + Groq OSS LLMs)"]
-        K2 --> L1[LangGraph State Workflow<br/>Autonomous Multi-Signal Orchestration]
+    subgraph AGENTS["5. Autonomous AI Agents (LangGraph + Groq OSS LLMs)"]
+        K1 --> T1[Fraud Triage & Prioritization Agent<br/>Queue Evaluation & Workload Matching]
+        T1 --> T2[Deterministic Multi-Signal Urgency Scoring<br/>Operational Tiers: Tier 1 Critical to Tier 4 Low]
+        T1 --> T3[Grounded Triage Explanations<br/>+ Supervisor Checkpoint & Batch Decisions]
+        
+        K2 --> L1[Investigation Agent<br/>Single-Case Deep Analysis]
         L1 --> L2[Deterministic Read-Only Tools<br/>Alert, TreeSHAP, Anomaly, History]
         L2 --> L3[Self-Reflective Grounding Audit<br/>Detect Hallucinations & Verify Citations]
-        L3 --> L4[Human Approval Checkpoint<br/>Investigator Review & Lifecycle Commit]
+        L3 --> L4[Analyst Approval Checkpoint<br/>Investigator Review & Lifecycle Commit]
     end
 
     subgraph PRESENTATION["6. Delivery & User Interfaces"]
-        J & L4 --> M[FastAPI REST API<br/>19 Production Endpoints]
-        J & L4 --> N[Streamlit Multi-Page Workspace<br/>Case Workbench with 1-Click AI Agent Approval]
+        J & T3 & L4 --> M[FastAPI REST API<br/>22 Production Endpoints]
+        J & T3 & L4 --> N[Streamlit Multi-Page Workspace<br/>Alert Queue Triage & Case Workbench]
     end
 ```
 
@@ -379,10 +389,13 @@ The API is built using FastAPI ([`src/api/main.py`](file:///e:/Fraud-Detection/s
 | | `PATCH` | `/cases/{case_id}/workflow` | Update status, assign analyst, record verdict, and mitigation action |
 | | `POST` | `/cases/{case_id}/notes` | Append auditable investigator note |
 | | `GET` | `/cases/{case_id}/audit` | Full chronological audit trail of state changes and actions |
-| **Agentic Investigation** | `POST` | `/cases/{case_id}/investigate` | Trigger autonomous multi-signal LangGraph investigation workflow |
+| **Agentic Operations** | `POST` | `/cases/{case_id}/investigate` | Trigger autonomous multi-signal LangGraph investigation workflow |
 | | `POST` | `/cases/{case_id}/agent-decision` | Human-in-the-loop checkpoint: approve or modify agent recommendation |
+| | `POST` | `/agent/triage/run` | Trigger LangGraph queue triage, prioritization, and grounded explanations |
+| | `POST` | `/agent/triage/apply` | Batch apply supervisor-approved triage decisions, case openings & assignments |
+| | `GET` | `/agent/triage/workloads` | Retrieve live investigator active case counts and capacity utilization |
 | | `POST` | `/agent/evaluate` | Run automated benchmark for factual grounding, citations & hallucinations |
-| | `GET` | `/agent/tools/check` | Live health verification of the 4 deterministic read-only retrieval tools |
+| | `GET` | `/agent/tools/check` | Live health verification of the deterministic read-only retrieval tools |
 
 ### Example API Request (Python)
 
@@ -415,15 +428,90 @@ if data["case_created"]:
 
 ---
 
-## 10. Agentic Investigation Layer (LangChain & LangGraph Orchestration)
+## 10. Autonomous AI Agents Layer (LangGraph & Groq OSS LLMs)
 
-To augment human fraud analysts and accelerate case resolution, the Anti-Fraudster Engine incorporates an autonomous **Agentic Investigation Layer** built with **LangChain 1.4.7** and **LangGraph 1.2.16**, powered by Groq's high-speed open-source LLM inference (`openai/gpt-oss-120b` champion and `openai/gpt-oss-20b` fallback).
+To empower fraud operations teams and eliminate repetitive manual triage bottlenecks without introducing unvetted black-box decisions, the Anti-Fraudster Engine incorporates an enterprise-grade **Autonomous AI Agents Layer** built with **LangChain 1.4.7** and **LangGraph 1.2.16**, powered by Groq's high-speed open-source LLM inference (`openai/gpt-oss-120b` champion and `openai/gpt-oss-20b` fallback).
 
-Rather than replacing or duplicating the underlying machine learning models, the agent acts as an **autonomous orchestrator** that queries deterministic tools, synthesizes supervised probabilities with unsupervised anomaly scores, enforces strict factual grounding, and prepares validated, structured recommendations for investigator review.
+The architecture features two specialized, complementary agents working in synergy:
 
-### Architecture & Stateful LangGraph Workflow
+### 10.1 Multi-Agent Synergy & Operational Roles
 
-The investigation workflow is modeled as a compiled state graph (`StateGraph[InvestigationState]`) in [`src/agents/investigation_agent.py`](src/agents/investigation_agent.py):
+| Feature / Dimension | 🛡️ Fraud Triage & Prioritization Agent | 💼 Investigation Agent |
+| :--- | :--- | :--- |
+| **Operational Scope** | Evaluates and prioritizes an **entire queue** of alerts | Investigates a **single specific alert or case** in depth |
+| **Primary Objective** | Decides **which alerts investigators should handle first and why** | Synthesizes multi-signal evidence to support the **final case verdict** |
+| **Prioritization Engine** | **100% Deterministic multi-signal scoring** (reproducible, zero hallucinated scores) | Calibrated threshold comparison against sealed ML prediction snapshot |
+| **Core Outputs** | Queue rank (1..N), priority tier, workload-aware investigator assignment, and grounded triage explanation | TreeSHAP evidence citations, operational quadrant analysis, recommended verdict & mitigation action |
+| **Human Oversight Role** | **Supervisor Checkpoint**: Batch approve/override escalations, priority tiers, and analyst assignments | **Investigator Checkpoint**: Review structured report, approve/override verdict and action, commit to database |
+| **Streamlit Interface** | **Prioritised Alert Queue & Triage Desk** (`dashboard/pages/alerts.py`) | **Investigation Case Workbench** (`dashboard/pages/investigations.py`) |
+
+---
+
+### 10.2 Fraud Triage & Prioritization Agent
+
+The **Fraud Triage & Prioritization Agent** ([`src/agents/triage_agent.py`](src/agents/triage_agent.py)) evaluates active alert backlogs, computes deterministic multi-signal urgency scores, assigns operational tiers, balances analyst capacity, and drafts evidence-grounded rationales for supervisor review.
+
+#### Architecture & Stateful LangGraph Workflow
+
+The triage workflow is modeled as a compiled state graph (`StateGraph[TriageState]`):
+
+<p align="center">
+  <img src="miscellaneous/triage_agent_graph.png" alt="Fraud Triage Agent State Graph" width="340"/>
+</p>
+
+```mermaid
+flowchart TD
+    START([START]) --> GATHER[node_gather_triage_queue<br/>Query Pending Alerts & Live Workloads]
+    GATHER --> RANK[node_deterministic_ranking<br/>Compute Urgency Score, Tiers & Analyst Match]
+    RANK --> EXPLAIN[node_generate_triage_explanations<br/>Groq LLM + PydanticOutputParser]
+    EXPLAIN --> AUDIT[node_validate_triage_grounding<br/>Audit Monotonicity & Hallucination Guardrails]
+
+    AUDIT --> CHECK{Passed Validation?}
+    CHECK -- Yes --> APPROVAL[node_checkpoint_triage_approval<br/>Supervisor Oversight Checkpoint]
+    CHECK -- "No (Attempts <= 2)" --> REVISE[node_revise_triage<br/>Inject Critique & Self-Correct]
+    REVISE --> AUDIT
+    CHECK -- "No (Attempts > 2)" --> APPROVAL
+
+    APPROVAL --> END([END])
+```
+
+#### Deterministic Multi-Signal Prioritization Formula
+To ensure priority rankings are 100% grounded and verifiable, the agent applies deterministic scoring:
+- **Supervised Fraud Probability (0–40 pts)**: $P(\text{Fraud}) \times 40$
+- **Isolation Forest Anomaly Score (0–25 pts)**: $\text{Score} \times 25$
+- **Monetary Exposure (0–15 pts)**: Tiered financial risk ($€1{,}000+ = 15$, $€500+ = 10$, $€150+ = 6$, else $2$)
+- **Policy Severity (0–15 pts)**: `CRITICAL` ($15$), `HIGH` ($10$), `MEDIUM` ($5$), `LOW` ($0$)
+- **Active Case Linkage (0–5 pts)**: $+5$ for alerts already escalated to an active case
+
+$$\text{Composite Urgency Score} = \min\left(100.0, \, \text{Score}_P + \text{Score}_{\text{Anom}} + \text{Score}_{\text{Amt}} + \text{Score}_{\text{Policy}} + \text{Score}_{\text{Case}}\right)$$
+
+#### Operational Priority Tiers & Action Mapping
+- **`TIER_1_CRITICAL`** (Score $\ge 70.0$ or $P \ge 0.80$): Immediate escalation to an investigation case; assigned to Senior Specialists.
+- **`TIER_2_HIGH`** (Score $\ge 48.0$ or $P \ge 0.45$ or Anomaly $\ge 0.75$): Fast-track escalation; assigned to Fraud Operations Analysts.
+- **`TIER_3_MEDIUM`** (Score $\ge 28.0$ or $P \ge 0.182$ or Anomaly $\ge 0.50$): Standard queue; scheduled for batch triage review.
+- **`TIER_4_LOW`** (Score $< 28.0$): Routine transactions; flagged for `DISMISS_FALSE_POSITIVE` or automated surveillance (`MONITOR_ONLY`).
+
+#### Workload-Aware Investigator Assignment
+The agent tracks live active cases ($O_i$) and maximum capacity ($C_i$) across the investigator roster via database queries ([`src/agents/tools.py`](src/agents/tools.py)):
+- **Specialty Alignment**: Matches critical tiers and novel anomaly outliers to analysts with verified domain expertise.
+- **Headroom Balancing**: Computes utilization $U_i = \frac{O_i}{C_i}$ and directs new cases to analysts with available bandwidth.
+- **Evidence-Grounded Rationale**: Explains assignment matching (e.g., *"Matched to Soham Mistry (Senior Fraud Specialist) based on TIER_1_CRITICAL alignment and available capacity (2/10 active cases, 20% load)."*).
+
+#### Supervisor Oversight & Batch Application Checkpoint
+In accordance with financial oversight principles, supervisor approval is required before state transitions take effect:
+1. Supervisors review proposed actions and investigator assignments in the Streamlit Alert Queue desk.
+2. Supervisors can reassign analysts, modify operational actions, or edit review notes directly in the interface.
+3. Clicking **"Approve & Apply Triage Decisions"** commits batch transitions to PostgreSQL/SQLite, opens active cases, assigns investigators, and records audit logs.
+
+---
+
+### 10.3 Investigation Agent
+
+The **Investigation Agent** ([`src/agents/investigation_agent.py`](src/agents/investigation_agent.py)) conducts auditable, single-case investigations by retrieving sealed predictions, calculating TreeSHAP attributions, synthesizing multi-signal ML outputs, and producing structured reports.
+
+#### Architecture & Stateful LangGraph Workflow
+
+The investigation workflow is modeled as a compiled state graph (`StateGraph[InvestigationState]`):
 
 <p align="center">
   <img src="miscellaneous/investigation_agent_graph.png" alt="Investigation Agent State Graph" width="340"/>
@@ -445,48 +533,54 @@ flowchart TD
     APPROVAL --> END([END])
 ```
 
-### Deterministic Read-Only Tools
+#### Analyst Review & Human-in-the-Loop Approval Checkpoint
+1. The agent compiles an `InvestigatorApprovalRequest` presenting its recommended verdict (`CONFIRMED_FRAUD`, `FALSE_POSITIVE`, `SUSPICIOUS_UNVERIFIED`, `LEGITIMATE`) and action (`CARD_BLOCKED`, `CHARGEBACK_INITIATED`, `TRANSACTION_RELEASED`, `CUSTOMER_CONTACTED`).
+2. Fraud analysts inspect the sealed prediction snapshot, TreeSHAP attributions, and executive summary in the Streamlit Investigation Workbench.
+3. With **1 click**, analysts approve or adjust the verdict and action.
+4. The system executes `apply_investigator_decision()`, updating the case status, adding an official analyst note, and recording a tamper-evident audit trail.
 
-The agent operates strictly over audited read-only retrieval functions ([`src/agents/tools.py`](file:///e:/Fraud-Detection/src/agents/tools.py)), ensuring zero risk of unvetted state mutations:
+---
 
-1. **`get_alert_details(alert_id: str)`**: Retrieves the stored alert record, supervised fraud probability, trigger policy justifications, and the complete 30-feature transaction vector.
-2. **`get_shap_explanation(alert_id: str, top_n: int = 5)`**: Computes TreeSHAP attributions directly on the transaction vector, returning the top positive (fraud-pushing) and negative (legitimate-mitigating) features in exact log-odds space.
-3. **`get_anomaly_score(alert_id: str)`**: Queries the champion Isolation Forest detector to compute the normalized anomaly score, raw decision score, and outlier tier (`EXTREME`, `HIGH`, `MODERATE`, `NORMAL`).
-4. **`get_case_history(case_id: str)`**: Retrieves the sealed original ML prediction snapshot, all previous analyst notes, and the tamper-evident audit trail.
+### 10.4 Deterministic Read-Only Tools
 
-### Strict Factual Grounding & Anti-Hallucination Guardrails
+The agents operate strictly over audited read-only retrieval tools ([`src/agents/tools.py`](src/agents/tools.py)):
+1. **`get_pending_alerts_for_triage(limit, status)`**: Fetches pending alerts from the database for triage evaluation.
+2. **`get_investigator_workloads()`**: Queries active case counts grouped by analyst, computing live capacity utilization ratios.
+3. **`get_alert_details(alert_id)`**: Retrieves stored alert metadata, probability, trigger reasons, and raw 30-feature vector.
+4. **`get_shap_explanation(alert_id, top_n=5)`**: Computes TreeSHAP attributions directly on the transaction vector in exact log-odds space.
+5. **`get_anomaly_score(alert_id)`**: Queries Isolation Forest for normalized outlier scores, decision values, and anomaly tiers.
+6. **`get_case_history(case_id)`**: Retrieves the sealed immutable prediction snapshot, analyst notes, and audit history.
 
-To prevent LLM hallucination—especially regarding anonymized PCA components $V_1$ through $V_{28}$—the system enforces deterministic validation:
+---
 
-- **Mathematical Value Alignment**: Every feature citation in `key_evidence_citations` must exactly match the true floating-point value present in the transaction vector within $|s - \hat{s}| \le 0.08$.
-- **SHAP Directional Consistency**: A feature claimed as `FRAUD_PUSHING` must have a mathematically positive TreeSHAP attribution ($\phi_i > 0$); claimed mitigating features must have $\phi_i < 0$.
-- **Prohibited Domain Storytelling Filter**: The grounding engine scans report text against regular expression patterns (`PROHIBITED_DOMAIN_PATTERNS`) to penalize any invented narratives (e.g., claiming $V_{14}$ represents an "overseas IP", "gas station", or "merchant category").
+### 10.5 Strict Grounding & Anti-Hallucination Guardrails
 
-### Human-in-the-Loop Approval Checkpoint
+To prevent LLM hallucination—especially regarding anonymized PCA components $V_1$ through $V_{28}$—the agents enforce deterministic validation:
+- **Mathematical Value Alignment**: Every cited feature in investigation reports must match the real observed value within $|s - \hat{s}| \le 0.08$.
+- **SHAP Directional Consistency**: Positive attributions ($\phi_i > 0$) must be classified as `FRAUD_PUSHING`; negative attributions ($\phi_i < 0$) must be `LEGITIMATE_MITIGATING`.
+- **Ranking Monotonicity Verification**: Triage items must follow strict non-increasing composite urgency scores ($S_i \ge S_{i+1}$).
+- **Zero Prohibited Domain Storytelling**: The self-audit engine checks all explanations against regular expression patterns (`PROHIBITED_DOMAIN_PATTERNS`) to penalize invented narratives (e.g., claiming $V_{14}$ represents an "overseas IP", "gas station", or "merchant category").
 
-In strict adherence to financial regulatory governance, an AI agent cannot unilaterally close or alter an active fraud case. Instead:
-1. The agent compiles an `InvestigatorApprovalRequest` presenting its recommended verdict (`CONFIRMED_FRAUD`, `FALSE_POSITIVE`, `SUSPICIOUS_UNVERIFIED`, `LEGITIMATE`) and recommended action (`CARD_BLOCKED`, `CHARGEBACK_INITIATED`, `TRANSACTION_RELEASED`, `CUSTOMER_CONTACTED`).
-2. Fraud investigators review the executive summary and evidence citation table in the Streamlit Workbench.
-3. With **1 click**, the investigator can approve the recommendation or adjust the verdict and action.
-4. The system executes `apply_investigator_decision()`, which commits the lifecycle transition, appends a signed `[AI Investigation Agent Decision - APPROVED]` note, and logs a tamper-evident audit entry.
+---
 
-### Automated Evaluation Benchmark Suite
+### 10.6 Automated Evaluation Benchmark Suite
 
-The agentic layer includes an automated benchmarking suite ([`src/agents/evaluator.py`](file:///e:/Fraud-Detection/src/agents/evaluator.py)) tested across representative holdout cases:
+The agentic layer includes an automated benchmarking suite ([`src/agents/evaluator.py`](src/agents/evaluator.py)) tested across representative holdout cases:
 
 | Metric | Target | Benchmark Result | Evaluation Method |
 | :--- | :---: | :---: | :--- |
 | **Factual Grounding Accuracy** | $> 95\%$ | **100.0%** | Mathematical verification against raw 30-feature transaction vector |
 | **Evidence Citation Accuracy** | $> 95\%$ | **100.0%** | Directional and magnitude alignment with TreeSHAP attributions |
+| **Ranking Monotonicity Score** | $100\%$ | **100.0%** | Strict monotonic ordering verification across triaged alert queue |
 | **Hallucination Freedom Rate** | $100\%$ | **100.0%** | Zero prohibited domain storytelling on anonymized components $V_1$–$V_{28}$ |
-| **Tool Execution Reliability** | $100\%$ | **100.0%** | Correct execution across all 4 deterministic retrieval engines |
+| **Tool Execution Reliability** | $100\%$ | **100.0%** | Correct execution across all deterministic retrieval engines |
 | **Composite Agent Quality** | $> 90\%$ | **100.0%** | Weighted synthesis across grounding, citations, and report consistency |
 
 ---
 
 ## 11. Streamlit Interactive Investigation Workspace
 
-A modern, responsive dark-themed workspace built with Streamlit ([`dashboard/app.py`](file:///e:/Fraud-Detection/dashboard/app.py)) implementing enterprise UX patterns:
+A modern, responsive dark-themed workspace built with Streamlit ([`dashboard/app.py`](dashboard/app.py)) implementing enterprise UX patterns:
 
 ### 1. Executive Operations Center (`dashboard/app.py`)
 - **Key Performance Indicators**: Total alerts in queue, active open cases, confirmed fraud count, and false positive ratio.
@@ -494,9 +588,17 @@ A modern, responsive dark-themed workspace built with Streamlit ([`dashboard/app
 - **Operational Quadrants Distribution**: Live distribution of flagged transactions across the 4 risk quadrants.
 - **Interactive Triage Simulator**: Score holdout or custom transactions live and observe real-time policy evaluation and automatic case escalation.
 
-### 2. Prioritised Alert Queue (`dashboard/pages/alerts.py`)
-- **Queue Filtering**: Multi-select filter by lifecycle status (`NEW`, `ESCALATED`, `CASE_CREATED`, `DISMISSED`), priority, minimum probability slider, and text search.
-- **Triage Action Drawer**: Inspect trigger justifications, view raw feature payloads, mark as escalated, dismiss false alerts, or escalate to an active case with analyst assignment and notes.
+### 2. Prioritised Alert Queue & Triage Desk (`dashboard/pages/alerts.py`)
+- **⚡ Fraud Triage & Prioritization Agent Workspace**:
+  - **Live Investigator Capacity Ribbon**: Real-time cards displaying active cases, maximum capacity, and colored utilization progress bars for all investigators.
+  - **Triage Control Ribbon**: Select LLM model engine, alert status filter, top-$N$ alerts slider, and workload assignment toggle.
+  - **Executive Queue Overview**: Macro backlog risk synthesis, tier distribution metrics, and workload bottleneck diagnostics.
+  - **Prioritized Queue Cards**: Ranked alert view displaying composite urgency score meters, fraud probability, anomaly score, transaction exposure, and LLM-grounded triage rationale.
+  - **Supervisor Oversight Form**: Review proposed actions and analyst assignments with interactive overrides and single-click **"Approve & Apply Triage Decisions"** batch execution.
+- **📋 Alert Queue Explorer & Inspector**:
+  - Filterable by lifecycle status (`NEW`, `ESCALATED`, `CASE_CREATED`, `DISMISSED`), priority, minimum probability slider, and text search.
+  - Interactive table using modern `width="stretch"` styling.
+  - Inspection drawer with feature payload viewer and manual case escalation.
 
 ### 3. Investigation Case Workbench with Autonomous AI Agent (`dashboard/pages/investigations.py`)
 - **🤖 Autonomous Agentic Investigator Panel**:
@@ -556,7 +658,7 @@ alembic upgrade head
 ```bash
 pytest -v
 ```
-*(All 68 unit and integration tests covering agent orchestration, factual grounding, preprocessing, scoring, explainability, anomaly detection, alert triage, case management, and REST endpoints)*
+*(All 82 unit and integration tests covering agent orchestration, triage prioritization, workload matching, factual grounding, preprocessing, scoring, explainability, anomaly detection, alert triage, case management, and REST endpoints)*
 
 ### 5. Launch the Streamlit Investigation Workspace
 ```bash
@@ -596,7 +698,8 @@ Fraud-Detection/
 │   └── fraud_cases.db               # Local SQLite database fallback
 │
 ├── miscellaneous/                   # State graphs and miscellaneous visual artifacts
-│   └── investigation_agent_graph.png # Compiled LangGraph state machine visualization
+│   ├── investigation_agent_graph.png # Compiled LangGraph investigation state machine
+│   └── triage_agent_graph.png        # Compiled LangGraph triage state machine
 │
 ├── models/                          # Serialized champion models and metadata
 │   ├── anomaly_metadata.json        # Isolation Forest calibration parameters & operational thresholds
@@ -616,13 +719,14 @@ Fraud-Detection/
 │   └── part3_anomaly_detection_optimization.md # Technical report for Part 3
 │
 ├── src/                             # Core Python application modules
-│   ├── agents/                      # Agentic Investigation Layer (LangGraph + Groq OSS)
+│   ├── agents/                      # Autonomous AI Agents Layer (LangGraph + Groq OSS)
 │   │   ├── config.py                # Groq ChatGroq model factory (gpt-oss-120b & 20b)
-│   │   ├── evaluator.py             # Grounding, citation, hallucination benchmark suite
-│   │   ├── investigation_agent.py   # Compiled LangGraph workflow & decision committer
-│   │   ├── schemas.py               # Pydantic V2 schemas (Report, Citations, Approval)
-│   │   ├── state.py                 # InvestigationState TypedDict definition
-│   │   └── tools.py                 # Deterministic read-only retrieval tools (@tool)
+│   │   ├── evaluator.py             # Grounding, citation, hallucination & triage benchmark suite
+│   │   ├── investigation_agent.py   # Compiled LangGraph investigation workflow & decision committer
+│   │   ├── schemas.py               # Pydantic V2 schemas (Reports, Citations, Triage, Workloads)
+│   │   ├── state.py                 # InvestigationState & TriageState TypedDict definitions
+│   │   ├── tools.py                 # Deterministic read-only retrieval tools (@tool)
+│   │   └── triage_agent.py          # Compiled LangGraph triage & prioritization workflow
 │   │
 │   ├── anomaly/                     # Unsupervised anomaly detection & comparative evaluation
 │   │   ├── comparison.py            # Empirical comparison (PR-AUC, ROC-AUC, overlap analysis)
@@ -631,7 +735,7 @@ Fraud-Detection/
 │   ├── api/                         # FastAPI application and route endpoints
 │   │   ├── main.py                  # App entry point, lifespan warmup, CORS
 │   │   └── routes/
-│   │       ├── agent.py             # Agent investigation, approval, and benchmark routes
+│   │       ├── agent.py             # Agent investigation, triage, approval, and workload routes
 │   │       ├── alerts.py            # Alert queue listing, summary, and triage routes
 │   │       ├── cases.py             # Case management, workflow, notes, and audit routes
 │   │       └── predict.py           # Single/batch prediction, explain, anomaly routes
@@ -654,13 +758,14 @@ Fraud-Detection/
 │   └── risk/                        # Risk policy engine
 │       └── policy.py                # Alert prioritization and auto-escalation criteria
 │
-├── tests/                           # Comprehensive test suite (68 tests)
-│   ├── test_agent.py                # Tests for LangGraph workflow, tools, schemas & evaluator
+├── tests/                           # Comprehensive test suite (82 tests)
+│   ├── test_agent.py                # Tests for LangGraph investigation workflow, tools, schemas & evaluator
 │   ├── test_anomaly.py              # Tests for Isolation Forest detector and comparison
-│   ├── test_api.py                  # Tests for all FastAPI endpoints (scoring, alerts, cases, agent)
+│   ├── test_api.py                  # Tests for all FastAPI endpoints (scoring, alerts, cases, agent, triage)
 │   ├── test_cases.py                # Tests for alert triage, case workflow, notes, and audit
 │   ├── test_explainability.py       # Tests for TreeSHAP explainer and risk assessor
-│   └── test_predictor.py            # Tests for XGBoost scoring, schemas, and thresholds
+│   ├── test_predictor.py            # Tests for XGBoost scoring, schemas, and thresholds
+│   └── test_triage_agent.py         # Tests for LangGraph triage workflow, scoring, matching & supervisor actions
 │
 ├── .gitignore                       # Git ignore rules (datasets, caches, databases)
 ├── alembic.ini                      # Alembic configuration file
