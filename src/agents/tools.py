@@ -243,3 +243,70 @@ TRIAGE_TOOLS = [
     get_alert_details,
 ]
 
+
+# =============================================================================
+# FRAUD PATTERN ANALYSIS RETRIEVAL TOOLS
+# =============================================================================
+
+@tool
+def get_historical_pattern_data(
+    limit: int = 500,
+    time_horizon_hours: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Retrieve historical alerts, transaction scores, and resolved case outcomes for pattern analysis.
+
+    Args:
+        limit: Maximum number of historical records to retrieve (default: 500).
+        time_horizon_hours: Optional lookback window filter in hours (e.g. 72, 168).
+
+    Returns:
+        Dictionary containing historical records, alert counts, case verdict breakdowns,
+        and temporal span metadata.
+    """
+    from datetime import datetime, timedelta, timezone
+    from src.cases.models import Alert, InvestigationCase
+
+    with get_db_context() as db:
+        query = db.query(Alert)
+        if time_horizon_hours is not None and time_horizon_hours > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=time_horizon_hours)
+            query = query.filter(Alert.created_at >= cutoff)
+
+        alerts = query.order_by(Alert.created_at.asc()).limit(limit).all()
+
+        cases = db.query(InvestigationCase).all()
+        cases_by_alert = {c.alert_id: c for c in cases if c.alert_id}
+        cases_by_tx = {c.transaction_id: c for c in cases if c.transaction_id}
+
+        records: List[Dict[str, Any]] = []
+        for a in alerts:
+            rec = a.to_dict()
+            linked_case = cases_by_alert.get(a.alert_id) or cases_by_tx.get(a.transaction_id)
+            if linked_case:
+                rec["case_id"] = linked_case.case_id
+                rec["case_status"] = linked_case.status
+                rec["verdict"] = linked_case.verdict
+                rec["action_taken"] = linked_case.action_taken
+                rec["resolved_at"] = (
+                    linked_case.resolved_at.isoformat() if linked_case.resolved_at else None
+                )
+            else:
+                rec["case_status"] = None
+                rec["verdict"] = None
+                rec["action_taken"] = None
+                rec["resolved_at"] = None
+
+            records.append(rec)
+
+    return {
+        "total_records": len(records),
+        "records": records,
+    }
+
+
+PATTERN_TOOLS = [
+    get_historical_pattern_data,
+    get_alert_details,
+]
+
+

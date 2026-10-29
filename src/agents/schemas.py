@@ -305,3 +305,147 @@ class TriageApprovalBatchRequest(BaseModel):
     supervisor_id: str = Field(default="fraud_supervisor", description="ID of supervisor approving decisions")
     decisions: List[TriageDecisionApplication] = Field(..., min_length=1, description="Decisions to apply across alerts")
 
+
+# =============================================================================
+# FRAUD PATTERN ANALYSIS AGENT SCHEMAS
+# =============================================================================
+
+class PatternCategory(str, Enum):
+    """Classification of detected fraud patterns and distribution shifts."""
+    ANOMALY_CONCENTRATION = "ANOMALY_CONCENTRATION"
+    VOLUME_VELOCITY = "VOLUME_VELOCITY"
+    MODEL_PERFORMANCE_SHIFT = "MODEL_PERFORMANCE_SHIFT"
+    EXPOSURE_DRIFT = "EXPOSURE_DRIFT"
+    STATISTICAL_DISTRIBUTION_SHIFT = "STATISTICAL_DISTRIBUTION_SHIFT"
+    RISK_TIER_MIGRATION = "RISK_TIER_MIGRATION"
+
+
+class ShiftSeverity(str, Enum):
+    """Urgency severity tier for detected pattern shifts."""
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    INFO = "INFO"
+
+
+class StatisticalConfidence(str, Enum):
+    """Confidence level of statistical findings."""
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
+class TimeWindowCohort(BaseModel):
+    """Deterministic summary statistics for a discrete temporal window cohort."""
+    window_name: str = Field(..., description="Label of the time window (e.g. 'Baseline Window', 'Recent Window')")
+    start_time: Optional[str] = Field(default=None, description="Start timestamp of the window")
+    end_time: Optional[str] = Field(default=None, description="End timestamp of the window")
+    alert_count: int = Field(default=0, ge=0, description="Total count of alerts in the window")
+    mean_amount: float = Field(default=0.0, ge=0.0, description="Mean transaction amount in Euros")
+    median_amount: float = Field(default=0.0, ge=0.0, description="Median transaction amount in Euros")
+    p90_amount: float = Field(default=0.0, ge=0.0, description="90th percentile transaction amount")
+    mean_fraud_probability: float = Field(default=0.0, ge=0.0, le=1.0, description="Mean supervised fraud probability")
+    high_fraud_share_pct: float = Field(default=0.0, ge=0.0, le=100.0, description="Percentage of alerts with P(Fraud) >= 0.70")
+    mean_anomaly_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Mean unsupervised anomaly score")
+    high_anomaly_share_pct: float = Field(default=0.0, ge=0.0, le=100.0, description="Percentage of alerts with Anomaly Score >= 0.70")
+    tier_distribution: Dict[str, int] = Field(default_factory=dict, description="Counts of alerts per priority tier")
+    quadrant_distribution: Dict[str, int] = Field(default_factory=dict, description="Counts of alerts per operational quadrant")
+    verified_outcomes_count: int = Field(default=0, ge=0, description="Count of cases with verified outcomes in this window")
+    confirmed_fraud_count: int = Field(default=0, ge=0, description="Count of confirmed fraud cases")
+    false_positive_count: int = Field(default=0, ge=0, description="Count of verified false positive cases")
+    false_positive_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="False positive rate among verified cases")
+    precision: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Precision among verified cases")
+
+
+class DetectedPatternShift(BaseModel):
+    """Measured statistical shift between baseline and recent window cohorts."""
+    metric_name: str = Field(..., description="Descriptive identifier of the measured metric")
+    baseline_value: float = Field(..., description="Metric value during the baseline comparison window")
+    recent_value: float = Field(..., description="Metric value during the recent analysis window")
+    absolute_change: float = Field(..., description="recent_value - baseline_value")
+    relative_change_pct: float = Field(..., description="Percentage shift relative to baseline: ((recent - baseline) / baseline) * 100")
+    severity: str = Field(default="INFO", description="Urgency severity: CRITICAL, HIGH, MEDIUM, LOW, INFO")
+    is_significant: bool = Field(default=False, description="Whether the shift meets statistical significance thresholds")
+    shift_summary: str = Field(..., min_length=10, description="Concise deterministic summary of the shift")
+
+    @field_validator("severity")
+    @classmethod
+    def validate_severity(cls, v: str) -> str:
+        clean = v.upper().strip()
+        valid = [item.value for item in ShiftSeverity]
+        if clean not in valid:
+            raise ValueError(f"Invalid severity '{v}'. Must be one of {valid}")
+        return clean
+
+
+class PatternFindingItem(BaseModel):
+    """Evidence-backed analytical finding synthesized from computed pattern shifts."""
+    pattern_title: str = Field(..., min_length=5, description="Clear, descriptive title for the discovered pattern")
+    category: str = Field(..., description="Category: ANOMALY_CONCENTRATION, VOLUME_VELOCITY, MODEL_PERFORMANCE_SHIFT, EXPOSURE_DRIFT, STATISTICAL_DISTRIBUTION_SHIFT, RISK_TIER_MIGRATION")
+    measured_pattern: str = Field(..., min_length=15, description="Precise measured pattern citing exact counts, rates, and window comparisons")
+    supporting_statistics: Dict[str, Any] = Field(default_factory=dict, description="Underlying numerical facts, counts, percentages, and comparison timeframes")
+    statistical_confidence: str = Field(default="MEDIUM", description="Confidence level: HIGH, MEDIUM, LOW")
+    dataset_limitations: str = Field(
+        ...,
+        min_length=15,
+        description="Explicit limitation stating V1-V28 are anonymized PCA components and do not identify merchants, locations, or cardholder behaviors",
+    )
+    recommended_followup: str = Field(..., min_length=15, description="Actionable follow-up steps (rules, thresholds, retraining, or queue handling)")
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        clean = v.upper().strip()
+        valid = [item.value for item in PatternCategory]
+        if clean not in valid:
+            raise ValueError(f"Invalid category '{v}'. Must be one of {valid}")
+        return clean
+
+    @field_validator("statistical_confidence")
+    @classmethod
+    def validate_confidence(cls, v: str) -> str:
+        clean = v.upper().strip()
+        valid = [item.value for item in StatisticalConfidence]
+        if clean not in valid:
+            raise ValueError(f"Invalid statistical_confidence '{v}'. Must be one of {valid}")
+        return clean
+
+
+class PatternAnalysisReport(BaseModel):
+    """Complete structured report produced by the Fraud Pattern Analysis Agent."""
+    report_id: str = Field(..., description="Unique report identifier (e.g. 'PAT-XXXXXXXX')")
+    generated_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="ISO UTC timestamp of report generation",
+    )
+    executive_summary: str = Field(
+        ...,
+        min_length=25,
+        description="High-level synthesis of historical trends, emerging shifts, and operational impacts",
+    )
+    baseline_window: TimeWindowCohort = Field(..., description="Cohort metrics for the baseline comparison period")
+    recent_window: TimeWindowCohort = Field(..., description="Cohort metrics for the recent evaluation period")
+    detected_shifts: List[DetectedPatternShift] = Field(
+        default_factory=list,
+        description="List of measured statistical shifts between cohorts",
+    )
+    findings: List[PatternFindingItem] = Field(
+        ...,
+        min_length=1,
+        description="Structured, evidence-backed findings interpreting computed pattern shifts",
+    )
+    model_error_analysis: Optional[str] = Field(
+        default=None,
+        description="Analysis of verified false positive and false negative trends across cohorts",
+    )
+    dataset_limitations_acknowledged: bool = Field(
+        default=True,
+        description="Affirmation that anonymized PCA features are treated strictly as mathematical components",
+    )
+    grounding_audit_passed: bool = Field(
+        default=True,
+        description="Whether all findings strictly adhere to computed numbers without hallucinated domain narratives",
+    )
+
+

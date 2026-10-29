@@ -72,3 +72,38 @@ class TriageState(TypedDict):
     approval_status: str  # PENDING, APPROVED, OVERRIDDEN
     final_decisions: Optional[List[Dict[str, Any]]]
 
+
+class PatternAnalysisState(TypedDict):
+    """Execution state tracking the complete lifecycle of historical fraud pattern and trend analysis."""
+
+    # Chat history / Message stream
+    messages: Annotated[List[BaseMessage], add_messages]
+
+    # Analysis scope & configuration parameters
+    time_horizon_hours: Optional[int]
+    baseline_ratio: float
+    min_alerts_threshold: int
+    model_name: str
+
+    # Deterministic historical records retrieved from storage
+    raw_historical_records: List[Dict[str, Any]]
+    baseline_records: List[Dict[str, Any]]
+    recent_records: List[Dict[str, Any]]
+    time_windows_metadata: Dict[str, Any]
+
+    # Deterministic cohort statistics & detected shifts
+    computed_statistics: Dict[str, Any]
+    detected_shifts: List[Dict[str, Any]]
+
+    # Structured Pydantic report & LLM synthesis
+    structured_report: Optional[Dict[str, Any]]
+
+    # Grounding check and validation status
+    validation_passed: bool
+    validation_errors: List[str]
+    validation_attempts: int
+
+    # Final publication
+    published_report: Optional[Dict[str, Any]]
+
+

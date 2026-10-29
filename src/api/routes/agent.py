@@ -302,3 +302,136 @@ def get_workloads_endpoint() -> Dict[str, Any]:
             detail=f"Workload retrieval failed: {str(exc)}",
         )
 
+
+# =============================================================================
+# FRAUD PATTERN ANALYSIS AGENT ENDPOINTS
+# =============================================================================
+
+_LATEST_PATTERN_REPORT: Optional[Dict[str, Any]] = None
+
+
+class TriggerPatternAnalysisRequest(BaseModel):
+    """Payload to trigger autonomous fraud pattern and trend discovery."""
+    time_horizon_hours: Optional[int] = Field(
+        default=None,
+        description="Lookback window in hours (e.g. 72, 168), or None for all available historical data",
+    )
+    baseline_ratio: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=0.9,
+        description="Fraction of chronological records allocated to baseline cohort (default: 0.5)",
+    )
+    min_alerts_threshold: int = Field(
+        default=10,
+        ge=2,
+        le=500,
+        description="Minimum sample size required for statistical confidence",
+    )
+    model_name: Optional[str] = Field(
+        default=DEFAULT_AGENT_MODEL,
+        description=f"Groq LLM model to use. Options: {SUPPORTED_MODELS}",
+    )
+
+
+@router.post(
+    "/agent/pattern-analysis/run",
+    summary="Trigger Fraud Pattern Analysis Agent",
+    description=(
+        "Executes stateful LangGraph workflow discovering emerging statistical patterns, "
+        "cohort and temporal trends, anomaly concentrations, and model error shifts "
+        "strictly observing anonymized PCA dataset constraints."
+    ),
+)
+def run_pattern_analysis_endpoint(
+    payload: TriggerPatternAnalysisRequest = TriggerPatternAnalysisRequest(),
+) -> Dict[str, Any]:
+    """Execute historical pattern analysis agent workflow."""
+    global _LATEST_PATTERN_REPORT
+    from src.agents.pattern_agent import run_pattern_analysis
+
+    try:
+        report = run_pattern_analysis(
+            time_horizon_hours=payload.time_horizon_hours,
+            baseline_ratio=payload.baseline_ratio,
+            min_alerts_threshold=payload.min_alerts_threshold,
+            model_name=payload.model_name or DEFAULT_AGENT_MODEL,
+        )
+        _LATEST_PATTERN_REPORT = report
+        return {
+            "status": "success",
+            "report_id": report.get("report_id"),
+            "data": report,
+        }
+    except Exception as exc:
+        logger.exception("Fraud pattern analysis workflow failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Pattern analysis failed: {str(exc)}",
+        )
+
+
+@router.get(
+    "/agent/pattern-analysis/latest",
+    summary="Get Latest Published Pattern Analysis Report",
+    description="Retrieve the most recently published pattern analysis report or generate a fresh analysis.",
+)
+def get_latest_pattern_report_endpoint() -> Dict[str, Any]:
+    """Retrieve latest pattern analysis findings."""
+    global _LATEST_PATTERN_REPORT
+    from src.agents.pattern_agent import run_pattern_analysis
+
+    if not _LATEST_PATTERN_REPORT:
+        try:
+            _LATEST_PATTERN_REPORT = run_pattern_analysis()
+        except Exception as exc:
+            logger.exception("Failed to generate initial pattern report: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Could not generate pattern report: {str(exc)}",
+            )
+
+    return {
+        "status": "success",
+        "data": _LATEST_PATTERN_REPORT,
+    }
+
+
+@router.post(
+    "/agent/pattern-analysis/evaluate",
+    summary="Evaluate Pattern Analysis Factual Grounding",
+    description="Audit a pattern report for factual grounding, numeric fidelity, and absence of prohibited domain storytelling.",
+)
+def evaluate_pattern_report_endpoint(
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Benchmark pattern analysis grounding against computed statistics."""
+    from src.agents.evaluator import evaluate_pattern_grounding
+    from src.agents.pattern_agent import compute_cohort_statistics
+
+    report = payload.get("report")
+    if not report:
+        report = _LATEST_PATTERN_REPORT
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No report provided or currently cached for evaluation.",
+        )
+
+    computed_stats = payload.get("computed_statistics")
+    if not computed_stats:
+        b_reported = report.get("baseline_window", {})
+        r_reported = report.get("recent_window", {})
+        computed_stats = {
+            "baseline_cohort": b_reported,
+            "recent_cohort": r_reported,
+        }
+
+    audit_result = evaluate_pattern_grounding(pattern_report=report, computed_stats=computed_stats)
+    return {
+        "status": "success",
+        "audit": audit_result,
+    }
+
+

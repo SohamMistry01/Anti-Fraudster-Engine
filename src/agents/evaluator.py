@@ -352,3 +352,105 @@ def evaluate_triage_grounding(
         "issues": issues,
     }
 
+
+def evaluate_pattern_grounding(
+    pattern_report: Dict[str, Any],
+    computed_stats: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Audit a Fraud Pattern Analysis report for statistical grounding and absence of domain hallucinations.
+
+    Verifies:
+    1. Absence of prohibited domain narratives (merchants, locations, fraud rings, customer travel)
+    2. Numerical fidelity against deterministic baseline and recent cohort statistics
+    3. Explicit acknowledgement of anonymized PCA dataset limitations (V1-V28)
+    4. Structural validity of evidence-backed findings and recommendations
+    """
+    from src.agents.pattern_agent import PROHIBITED_DOMAIN_PATTERNS
+
+    issues: List[str] = []
+
+    # 1. Domain Storytelling & Hallucination Audit
+    findings = pattern_report.get("findings", [])
+    text_parts = [
+        pattern_report.get("executive_summary", ""),
+        pattern_report.get("model_error_analysis", "") or "",
+    ]
+    for f in findings:
+        text_parts.extend([
+            f.get("pattern_title", ""),
+            f.get("measured_pattern", ""),
+            f.get("dataset_limitations", ""),
+            f.get("recommended_followup", ""),
+        ])
+
+    full_text = " ".join(text_parts).lower()
+
+    detected_hallucinations = []
+    for pattern in PROHIBITED_DOMAIN_PATTERNS:
+        matches = re.findall(pattern, full_text)
+        if matches:
+            detected_hallucinations.extend(matches)
+            issues.append(f"Detected prohibited domain narrative: {matches}")
+
+    hallucination_score = 1.0 if not detected_hallucinations else max(0.0, 1.0 - 0.25 * len(detected_hallucinations))
+
+    # 2. Numerical Fidelity with Computed Cohort Stats
+    b_reported = pattern_report.get("baseline_window", {})
+    r_reported = pattern_report.get("recent_window", {})
+    b_true = computed_stats.get("baseline_cohort", {})
+    r_true = computed_stats.get("recent_cohort", {})
+
+    numeric_checks = 0
+    numeric_passed = 0
+
+    for window_key, reported_w, true_w in [("baseline", b_reported, b_true), ("recent", r_reported, r_true)]:
+        if not true_w:
+            continue
+        # Compare alert_count
+        numeric_checks += 1
+        if reported_w.get("alert_count") == true_w.get("alert_count"):
+            numeric_passed += 1
+        else:
+            issues.append(f"Alert count mismatch in {window_key} window: reported {reported_w.get('alert_count')} vs true {true_w.get('alert_count')}.")
+
+        # Compare mean_amount
+        numeric_checks += 1
+        if abs(reported_w.get("mean_amount", 0.0) - true_w.get("mean_amount", 0.0)) <= 0.05:
+            numeric_passed += 1
+        else:
+            issues.append(f"Mean amount mismatch in {window_key} window: reported €{reported_w.get('mean_amount')} vs true €{true_w.get('mean_amount')}.")
+
+        # Compare high_anomaly_share_pct
+        numeric_checks += 1
+        if abs(reported_w.get("high_anomaly_share_pct", 0.0) - true_w.get("high_anomaly_share_pct", 0.0)) <= 0.1:
+            numeric_passed += 1
+        else:
+            issues.append(f"High anomaly share mismatch in {window_key} window: reported {reported_w.get('high_anomaly_share_pct')}% vs true {true_w.get('high_anomaly_share_pct')}%.")
+
+    numeric_score = round(numeric_passed / max(numeric_checks, 1), 4)
+
+    # 3. Limitations Acknowledgement
+    limitations_acknowledged = pattern_report.get("dataset_limitations_acknowledged", False)
+    all_findings_have_limitations = all(
+        len(f.get("dataset_limitations", "")) >= 15 for f in findings
+    ) if findings else False
+
+    limitations_score = 1.0 if (limitations_acknowledged and all_findings_have_limitations) else 0.5
+    if not limitations_acknowledged:
+        issues.append("Report did not explicitly set dataset_limitations_acknowledged to True.")
+    if not all_findings_have_limitations:
+        issues.append("One or more findings lack explicit PCA dataset limitation statements.")
+
+    # 4. Overall Score
+    overall = round(0.4 * hallucination_score + 0.3 * numeric_score + 0.3 * limitations_score, 4)
+
+    return {
+        "grounding_passed": len(issues) == 0,
+        "hallucination_freedom_score": round(hallucination_score, 4),
+        "numeric_fidelity_score": numeric_score,
+        "limitations_adherence_score": limitations_score,
+        "overall_score": overall,
+        "issues": issues,
+    }
+
+
