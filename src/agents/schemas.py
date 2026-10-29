@@ -412,6 +412,29 @@ class PatternFindingItem(BaseModel):
         return clean
 
 
+class CohortTrendAnalysisOutput(BaseModel):
+    """Intermediate analytical synthesis of cohort dynamics and model error shifts (processed by specialized LLM)."""
+    cohort_trend_insights: str = Field(
+        ...,
+        min_length=15,
+        description="Analysis of cohort differences between baseline and recent periods (amounts, velocity, anomaly concentrations)",
+    )
+    model_error_analysis: str = Field(
+        ...,
+        min_length=15,
+        description="Focused analysis of verified false positive rates, precision trends, and detection efficacy",
+    )
+
+
+class PatternFindingsBatchOutput(BaseModel):
+    """Batch container for structured pattern findings (processed by specialized LLM)."""
+    findings: List[PatternFindingItem] = Field(
+        ...,
+        min_length=1,
+        description="Formulated list of evidence-backed findings strictly adhering to anonymized PCA constraints",
+    )
+
+
 class PatternAnalysisReport(BaseModel):
     """Complete structured report produced by the Fraud Pattern Analysis Agent."""
     report_id: str = Field(..., description="Unique report identifier (e.g. 'PAT-XXXXXXXX')")
@@ -447,5 +470,10 @@ class PatternAnalysisReport(BaseModel):
         default=True,
         description="Whether all findings strictly adhere to computed numbers without hallucinated domain narratives",
     )
+    models_used: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Breakdown of models used across the distributed pattern analysis pipeline",
+    )
+
 
 

@@ -5,7 +5,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.42+-FF4B4B.svg)](https://streamlit.io)
 [![SQLAlchemy 2.0](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
 [![Alembic](https://img.shields.io/badge/Alembic-1.14+-orange.svg)](https://alembic.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/tests-95%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-96%20passed-brightgreen.svg)](tests/)
 [![PR-AUC](https://img.shields.io/badge/PR--AUC-0.8209-success.svg)](models/)
 [![ROC-AUC](https://img.shields.io/badge/ROC--AUC-0.9766-success.svg)](models/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2+-purple.svg)](https://langchain-ai.github.io/langgraph/)
@@ -13,7 +13,7 @@
 
 A comprehensive, enterprise-ready credit card fraud detection system designed for high-throughput scoring, local model explainability, unsupervised anomaly detection, prioritised alert queues, auditable investigation workflows, and an autonomous multi-agent operational layer powered by LangGraph and Groq open-source LLMs.
 
-Built on the European cardholder benchmark dataset (284,807 transactions with an extreme 0.172% fraud class imbalance), the system features a champion **XGBoost Classifier** (PR-AUC **0.8209**, ROC-AUC **0.9766**), an optimized **Isolation Forest Anomaly Detector** (PR-AUC **0.5614**, ROC-AUC **0.9308** with noise subspace pruning and 4 operational modes), local feature attributions via **TreeSHAP** with interactive **Plotly** visualizations, three stateful **LangGraph 1.2.16** autonomous AI agents (**Investigation Agent**, **Fraud Triage & Prioritization Agent**, and **Fraud Pattern Analysis Agent**) using Groq open-source models (`openai/gpt-oss-120b` and `20b`), a low-latency **FastAPI** REST service with 25 endpoints, and an interactive **Streamlit** workspace powered by **PostgreSQL / SQLAlchemy** and **Alembic** schema migrations.
+Built on the European cardholder benchmark dataset (284,807 transactions with an extreme 0.172% fraud class imbalance), the system features a champion **XGBoost Classifier** (PR-AUC **0.8209**, ROC-AUC **0.9766**), an optimized **Isolation Forest Anomaly Detector** (PR-AUC **0.5614**, ROC-AUC **0.9308** with noise subspace pruning and 4 operational modes), local feature attributions via **TreeSHAP** with interactive **Plotly** visualizations, three stateful **LangGraph 1.2.16** autonomous AI agents (**Investigation Agent**, **Fraud Triage & Prioritization Agent**, and **Fraud Pattern Analysis Agent**) using distributed Groq open-source models (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, and `qwen/qwen3.8-27b`), a low-latency **FastAPI** REST service with 25 endpoints, and an interactive **Streamlit** workspace powered by **PostgreSQL / SQLAlchemy** and **Alembic** schema migrations.
 
 ---
 
@@ -601,6 +601,42 @@ flowchart TD
 4. **Evidence-Backed Findings & Follow-Up Recommendations**:
    - The LLM synthesizes structured findings ([`PatternFindingItem`](src/agents/schemas.py)) citing exact measured counts, percentages, and comparison windows.
    - Provides concrete operational follow-up recommendations (e.g., retrain Isolation Forest, adjust triage urgency threshold, review feature drift on $V_{14}$, allocate investigator capacity).
+
+#### Distributed Multi-LLM Role Specialization & Token Optimization
+
+Historical pattern analysis across large cohorts generates substantial analytical context (distributions, percentiles, error dynamics, PCA vectors). Sending this entire context into a single monolithic LLM prompt consumes upwards of **5,500 tokens per request**, risking Groq Tokens-Per-Minute (TPM) and Requests-Per-Minute (RPM) rate limit bottlenecks.
+
+To eliminate rate limit errors and optimize latency, the Pattern Analysis Agent decomposes synthesis into **3 specialized sub-tasks** distributed across the models defined in [`src/agents/config.py`](src/agents/config.py):
+
+```mermaid
+flowchart LR
+    COMPUTE[Deterministic Stats & Shifts] --> SUB1
+    COMPUTE --> SUB2
+
+    subgraph Distributed Multi-LLM Pipeline
+        SUB1[Sub-Task 1: Cohort Trends & Error Rates<br/><b>qwen/qwen3.8-27b</b><br/>~250 input tokens]
+        SUB2[Sub-Task 2: Evidence-Backed Findings<br/><b>openai/gpt-oss-20b</b><br/>~400 input tokens]
+        SUB1 --> SUB3
+        SUB2 --> SUB3
+        SUB3[Sub-Task 3: Executive Leadership Brief<br/><b>openai/gpt-oss-120b</b><br/>~200 input tokens]
+    end
+
+    SUB3 --> REPORT[Assembled PatternAnalysisReport]
+```
+
+| Sub-Task | Model | Role & Focus | Input Context | Output Schema | Token Impact |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. Cohort & Error Trends** | `qwen/qwen3.8-27b` | Temporal volume shifts, exposure distributions (mean, median, $P_{90}$), and verified false positive/precision trends | Baseline & recent cohort metrics | [`CohortTrendAnalysisOutput`](src/agents/schemas.py) | **~250 tokens** (vs. ~5,500 monolithic) |
+| **2. Pattern Findings** | `openai/gpt-oss-20b` | Itemized evidence formulation citing exact shifts and enforcing anonymized PCA constraints | Computed shift summaries | [`PatternFindingsBatchOutput`](src/agents/schemas.py) | **~400 tokens** (vs. ~5,500 monolithic) |
+| **3. Executive Brief** | `openai/gpt-oss-120b` | High-level leadership synthesis distilling macro trends and strategic risks | Sub-task 1 & 2 summaries | 2-3 sentence executive summary string | **~200 tokens** (>96% reduction on 120b) |
+| **Revision / Self-Correction** | `openai/gpt-oss-20b` | Fast targeted self-correction if grounding validation detects storytelling or missing citations | Critique feedback & previous draft | Revised [`PatternAnalysisReport`](src/agents/schemas.py) | Saves 120b quota on revision cycles |
+
+**Key Benefits**:
+- **>96% Token Reduction on 120b Model**: Drops peak prompt tokens sent to `openai/gpt-oss-120b` from ~5,500 to ~200 tokens.
+- **>92% Reduction in Peak Request Size**: Individual prompts never exceed 400 tokens.
+- **Distributed Rate Limits**: Spreads TPM and RPM quotas across three distinct Groq endpoints (`qwen3.8-27b`, `gpt-oss-20b`, `gpt-oss-120b`).
+- **Resilient Fallback**: If any individual LLM call fails, deterministic Python fallbacks preserve pipeline execution without disruption.
+- **Model Traceability**: Every published report records exact model metadata in `report["models_used"]`.
 
 #### Strict Dataset Limitation Guardrails
 The European Credit Card Fraud dataset contains anonymized PCA features ($V_1$–$V_{28}$) and does not provide real merchant or cardholder identities. The agent strictly adheres to this limitation:

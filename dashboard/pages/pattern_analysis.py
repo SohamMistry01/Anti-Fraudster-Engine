@@ -26,7 +26,12 @@ from dashboard.utils import (
     inject_custom_styles,
     render_metric_card,
 )
-from src.agents.config import DEFAULT_AGENT_MODEL, SUPPORTED_MODELS
+from src.agents.config import (
+    DEFAULT_AGENT_MODEL,
+    DISTRIBUTED_PIPELINE_OPTION,
+    PATTERN_MODELS,
+    SUPPORTED_MODELS,
+)
 from src.agents.evaluator import evaluate_pattern_grounding
 from src.agents.pattern_agent import run_pattern_analysis
 
@@ -105,9 +110,10 @@ with st.sidebar:
     )
 
     selected_model = st.selectbox(
-        "Reasoning Model",
-        options=SUPPORTED_MODELS,
-        index=SUPPORTED_MODELS.index(DEFAULT_AGENT_MODEL) if DEFAULT_AGENT_MODEL in SUPPORTED_MODELS else 0,
+        "Reasoning Pipeline",
+        options=PATTERN_MODELS,
+        index=0,
+        help="Distributed Multi-LLM divides sub-tasks across qwen/qwen3.8-27b (cohort trends), openai/gpt-oss-20b (pattern findings), and openai/gpt-oss-120b (executive summary) to minimize token consumption and avoid Groq rate limit errors.",
     )
 
     st.divider()
@@ -148,6 +154,19 @@ with st.container(border=True):
         st.markdown(f"#### 📋 **Executive Summary • Report `{report.get('report_id')}`**")
         st.markdown(f"**Generated:** `{report.get('generated_at')}`")
         st.markdown(f"> *{report.get('executive_summary')}*")
+
+        # Distributed Multi-LLM Role Breakdown
+        models_used = report.get("models_used")
+        if models_used:
+            st.markdown(
+                f"<div style='margin-top: 10px; font-size: 0.82rem; color: #94a3b8; display: flex; gap: 14px; flex-wrap: wrap; background: rgba(30, 41, 59, 0.4); padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.15);'>"
+                f"<span><b>Pipeline:</b> <code style='color: #38bdf8;'>{models_used.get('pipeline_mode', 'Distributed')}</code></span>"
+                f"<span><b>Cohort Trends:</b> <code style='color: #a78bfa;'>{models_used.get('cohort_model', 'N/A')}</code></span>"
+                f"<span><b>Findings:</b> <code style='color: #34d399;'>{models_used.get('findings_model', 'N/A')}</code></span>"
+                f"<span><b>Executive Brief:</b> <code style='color: #fbbf24;'>{models_used.get('executive_model', 'N/A')}</code></span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
     with col_hdr2:
         audit_passed = report.get("grounding_audit_passed", True)
         if audit_passed:

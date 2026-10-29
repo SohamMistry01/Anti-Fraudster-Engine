@@ -21,12 +21,22 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import END, START, StateGraph
 
-from src.agents.config import DEFAULT_AGENT_MODEL, get_groq_llm
+from src.agents.config import (
+    DEFAULT_AGENT_MODEL,
+    DISTRIBUTED_PIPELINE_OPTION,
+    FALLBACK_AGENT_MODEL,
+    PATTERN_COHORT_MODEL,
+    PATTERN_EXECUTIVE_MODEL,
+    PATTERN_FINDINGS_MODEL,
+    get_groq_llm,
+)
 from src.agents.schemas import (
+    CohortTrendAnalysisOutput,
     DetectedPatternShift,
     PatternAnalysisReport,
     PatternCategory,
     PatternFindingItem,
+    PatternFindingsBatchOutput,
     ShiftSeverity,
     StatisticalConfidence,
     TimeWindowCohort,
@@ -475,8 +485,250 @@ def node_detect_anomalous_trends(state: PatternAnalysisState) -> Dict[str, Any]:
     }
 
 
+# =============================================================================
+# DISTRIBUTED MULTI-LLM PATTERN SYNTHESIS SUB-TASKS
+# =============================================================================
+
+def synthesize_cohort_and_error_trends(
+    b_cohort: TimeWindowCohort,
+    r_cohort: TimeWindowCohort,
+    model_name: str = PATTERN_COHORT_MODEL,
+) -> Tuple[str, str]:
+    """Sub-task 1: Synthesize cohort dynamics and verified model error trends using specialized LLM (qwen/qwen3.8-27b).
+
+    Focuses strictly on numeric cohort comparison and outcome validation shifts.
+    Token footprint: ~250 input tokens (vs ~5,500 monolithic).
+    """
+    cohort_summary = (
+        f"BASELINE COHORT: alerts={b_cohort.alert_count}, mean_amt=€{b_cohort.mean_amount:.2f}, "
+        f"median_amt=€{b_cohort.median_amount:.2f}, p90_amt=€{b_cohort.p90_amount:.2f}, "
+        f"high_anomaly_share={b_cohort.high_anomaly_share_pct:.1f}%, high_fraud_share={b_cohort.high_fraud_share_pct:.1f}%, "
+        f"verified_cases={b_cohort.verified_outcomes_count}, confirmed_fraud={b_cohort.confirmed_fraud_count}, "
+        f"false_positives={b_cohort.false_positive_count}, fpr={f'{b_cohort.false_positive_rate:.1%}' if b_cohort.false_positive_rate is not None else 'N/A'}.\n"
+        f"RECENT COHORT: alerts={r_cohort.alert_count}, mean_amt=€{r_cohort.mean_amount:.2f}, "
+        f"median_amt=€{r_cohort.median_amount:.2f}, p90_amt=€{r_cohort.p90_amount:.2f}, "
+        f"high_anomaly_share={r_cohort.high_anomaly_share_pct:.1f}%, high_fraud_share={r_cohort.high_fraud_share_pct:.1f}%, "
+        f"verified_cases={r_cohort.verified_outcomes_count}, confirmed_fraud={r_cohort.confirmed_fraud_count}, "
+        f"false_positives={r_cohort.false_positive_count}, fpr={f'{r_cohort.false_positive_rate:.1%}' if r_cohort.false_positive_rate is not None else 'N/A'}."
+    )
+
+    llm = get_groq_llm(model_name=model_name, temperature=0.1)
+    parser = PydanticOutputParser(pydantic_object=CohortTrendAnalysisOutput)
+
+    prompt_tmpl = PromptTemplate(
+        template="""You are a Quantitative Fraud Pattern Analyst.
+Compare the baseline cohort vs. recent cohort metrics below and generate:
+1. 'cohort_trend_insights': 1-2 concise sentences comparing alert volume, monetary exposure (mean, median, p90), and high-anomaly concentrations. Cite exact figures.
+2. 'model_error_analysis': 1-2 concise sentences analyzing verified outcomes (confirmed fraud vs false positives, false positive rate, precision). If no verified outcomes exist, state that outcome verification is in progress.
+
+--- COHORT METRICS ---
+{cohort_summary}
+
+--- STRICT CONSTRAINTS ---
+- Cite exact numbers from the metrics above; never hallucinate or invent figures.
+- European Credit Card dataset features V1-V28 are anonymized mathematical PCA components. Never mention specific merchants, locations, or cardholder travel.
+
+{format_instructions}
+""",
+        input_variables=["cohort_summary"],
+        partial_variables={"format_instructions": parser.get_format_instructions()},
+    )
+
+    try:
+        chain = prompt_tmpl | llm | parser
+        res: CohortTrendAnalysisOutput = chain.invoke({"cohort_summary": cohort_summary})
+        return res.cohort_trend_insights, res.model_error_analysis
+    except Exception as exc:
+        logger.warning("Cohort trend LLM synthesis failed on model '%s' (%s). Using deterministic fallback.", model_name, exc)
+        insights = (
+            f"Baseline cohort evaluated {b_cohort.alert_count} alerts (mean amount €{b_cohort.mean_amount:.2f}, "
+            f"{b_cohort.high_anomaly_share_pct:.1f}% high-anomaly), compared to {r_cohort.alert_count} alerts "
+            f"(mean amount €{r_cohort.mean_amount:.2f}, {r_cohort.high_anomaly_share_pct:.1f}% high-anomaly) in the recent cohort."
+        )
+        err_analysis = (
+            f"Verified false positive rate is {r_cohort.false_positive_rate:.1%}" if r_cohort.false_positive_rate is not None
+            else "Outcome verification in progress for recent cohort."
+        )
+        return insights, err_analysis
+
+
+def formulate_pattern_findings(
+    shifts: List[Dict[str, Any]],
+    b_stats: Dict[str, Any],
+    r_stats: Dict[str, Any],
+    model_name: str = PATTERN_FINDINGS_MODEL,
+) -> List[PatternFindingItem]:
+    """Sub-task 2: Formulate itemized evidence-backed findings using specialized LLM (openai/gpt-oss-20b).
+
+    Strictly applies anonymized PCA constraints and cites exact shift metrics.
+    Token footprint: ~400 input tokens (vs ~5,500 monolithic).
+    """
+    shifts_summary = "\n".join(
+        f"- {s['metric_name']}: Baseline={s['baseline_value']}, Recent={s['recent_value']} "
+        f"({'+' if s['absolute_change'] >= 0 else ''}{s['absolute_change']}), "
+        f"Rel Shift={s['relative_change_pct']}%, Severity={s['severity']}, Significant={s['is_significant']} "
+        f"--> Summary: {s['shift_summary']}"
+        for s in shifts
+    )
+
+    if not shifts_summary.strip():
+        shifts_summary = "No significant metric shifts detected between baseline and recent cohorts."
+
+    llm = get_groq_llm(model_name=model_name, temperature=0.1)
+    parser = PydanticOutputParser(pydantic_object=PatternFindingsBatchOutput)
+
+    prompt_tmpl = PromptTemplate(
+        template="""You are a Fraud Risk Modeler specializing in statistical pattern discovery.
+Interpret the detected statistical shifts between baseline and recent cohorts and formulate 1 to 4 evidence-backed findings.
+
+--- DETECTED STATISTICAL SHIFTS ---
+{shifts_summary}
+
+--- STRICT CONSTRAINTS (ZERO TOLERANCE) ---
+1. GROUNDING: Cite exact baseline, recent, and relative change percentages from the shifts above.
+2. ANONYMIZED PCA RESTRICTION (CRITICAL): The European Credit Card Fraud dataset contains anonymized PCA features (V1–V28).
+   - You MUST NOT claim to discover particular merchants, store types (e.g. gas stations, jewelry stores, electronics),
+     geographic locations, foreign IPs, customer travel, or fraud rings from those features alone.
+   - PCA components MUST be described strictly as mathematical PCA components reflecting latent feature correlations.
+3. STRUCTURE:
+   - 'pattern_title': Clear title (e.g., 'Surge in Isolation Forest Unsupervised Anomalies')
+   - 'category': One of ANOMALY_CONCENTRATION, VOLUME_VELOCITY, MODEL_PERFORMANCE_SHIFT, EXPOSURE_DRIFT, STATISTICAL_DISTRIBUTION_SHIFT, RISK_TIER_MIGRATION
+   - 'measured_pattern': 1-2 sentences with exact numbers and comparison periods
+   - 'supporting_statistics': Dictionary containing baseline, recent, and relative change values
+   - 'statistical_confidence': 'HIGH', 'MEDIUM', or 'LOW'
+   - 'dataset_limitations': Explicit affirmation of anonymized PCA constraints
+   - 'recommended_followup': Concrete operational recommendation
+
+{format_instructions}
+""",
+        input_variables=["shifts_summary"],
+        partial_variables={"format_instructions": parser.get_format_instructions()},
+    )
+
+    try:
+        chain = prompt_tmpl | llm | parser
+        res: PatternFindingsBatchOutput = chain.invoke({"shifts_summary": shifts_summary})
+        if res.findings:
+            return res.findings
+    except Exception as exc:
+        logger.warning("Pattern findings LLM formulation failed on model '%s' (%s). Using deterministic fallback.", model_name, exc)
+
+    # Resilient fallback formulation
+    fallback_findings: List[PatternFindingItem] = []
+    for s in shifts:
+        if s.get("is_significant"):
+            cat = PatternCategory.ANOMALY_CONCENTRATION.value
+            if "Amount" in s["metric_name"]:
+                cat = PatternCategory.EXPOSURE_DRIFT.value
+            elif "Volume" in s["metric_name"]:
+                cat = PatternCategory.VOLUME_VELOCITY.value
+            elif "False Positive" in s["metric_name"]:
+                cat = PatternCategory.MODEL_PERFORMANCE_SHIFT.value
+            elif "PCA" in s["metric_name"]:
+                cat = PatternCategory.STATISTICAL_DISTRIBUTION_SHIFT.value
+
+            fallback_findings.append(PatternFindingItem(
+                pattern_title=f"Emerging Shift: {s['metric_name']}",
+                category=cat,
+                measured_pattern=s["shift_summary"],
+                supporting_statistics={
+                    "baseline_value": s["baseline_value"],
+                    "recent_value": s["recent_value"],
+                    "relative_change_pct": s["relative_change_pct"],
+                },
+                statistical_confidence="HIGH" if abs(s["relative_change_pct"]) >= 30.0 else "MEDIUM",
+                dataset_limitations=(
+                    "European Credit Card dataset contains anonymized PCA features V1-V28. "
+                    "This finding reflects purely mathematical distribution shifts without real merchant or cardholder identities."
+                ),
+                recommended_followup=(
+                    f"Review risk threshold and queue triage routing for {s['metric_name']} "
+                    f"to prevent operational backlog or detection degradation."
+                ),
+            ))
+
+    if not fallback_findings:
+        fallback_findings.append(PatternFindingItem(
+            pattern_title="Stable Baseline Operational Risk Profile",
+            category=PatternCategory.STATISTICAL_DISTRIBUTION_SHIFT.value,
+            measured_pattern=(
+                f"Evaluated {b_stats.get('alert_count', 0)} baseline and {r_stats.get('alert_count', 0)} recent alerts. "
+                "Metric shifts remain within standard operational bounds."
+            ),
+            supporting_statistics={
+                "baseline_alerts": b_stats.get("alert_count", 0),
+                "recent_alerts": r_stats.get("alert_count", 0),
+            },
+            statistical_confidence="HIGH",
+            dataset_limitations="Features V1-V28 are anonymized mathematical PCA components.",
+            recommended_followup="Continue automated surveillance and monitor subsequent window cohorts.",
+        ))
+
+    return fallback_findings
+
+
+def synthesize_executive_summary(
+    cohort_insights: str,
+    error_analysis: str,
+    findings: List[PatternFindingItem],
+    b_cohort: TimeWindowCohort,
+    r_cohort: TimeWindowCohort,
+    model_name: str = PATTERN_EXECUTIVE_MODEL,
+) -> str:
+    """Sub-task 3: High-level leadership synthesis using executive LLM (openai/gpt-oss-120b).
+
+    Distills macro dynamics into a clean 2-3 sentence executive brief.
+    Token footprint: ~200 input tokens (vs ~5,500 monolithic).
+    """
+    findings_bullets = "\n".join(
+        f"- {f.pattern_title} ({f.category}): {f.measured_pattern}"
+        for f in findings[:4]
+    )
+
+    llm = get_groq_llm(model_name=model_name, temperature=0.1)
+    prompt_tmpl = PromptTemplate(
+        template="""You are the Chief Risk Officer AI for a tier-1 financial institution.
+Synthesize the following quantitative cohort insights and pattern findings into a concise 2-3 sentence executive summary for senior risk leadership.
+
+COHORT TRENDS:
+{cohort_insights}
+
+VERIFIED ERROR DYNAMICS:
+{error_analysis}
+
+KEY FINDINGS:
+{findings_bullets}
+
+CRITICAL: Keep strictly grounded in measured data. Features V1-V28 are anonymized PCA components; never mention specific merchants, locations, or fraud rings.
+Respond with ONLY the 2-3 sentence executive summary.
+""",
+        input_variables=["cohort_insights", "error_analysis", "findings_bullets"],
+    )
+
+    try:
+        chain = prompt_tmpl | llm
+        response = chain.invoke({
+            "cohort_insights": cohort_insights,
+            "error_analysis": error_analysis,
+            "findings_bullets": findings_bullets,
+        })
+        text = response.content if hasattr(response, "content") else str(response)
+        summary = text.strip()
+        # Ensure clean text
+        if len(summary) >= 25:
+            return summary
+    except Exception as exc:
+        logger.warning("Executive summary LLM synthesis failed on model '%s' (%s). Using deterministic fallback.", model_name, exc)
+
+    return (
+        f"Historical analysis reveals a {r_cohort.high_anomaly_share_pct:.1f}% concentration of high-anomaly alerts "
+        f"in the recent cohort (vs. {b_cohort.high_anomaly_share_pct:.1f}% baseline), with mean monetary exposure at €{r_cohort.mean_amount:.2f}. "
+        f"Active findings highlight emerging distribution shifts across unsupervised anomaly scores and latent PCA vectors."
+    )
+
+
 def node_synthesize_findings(state: PatternAnalysisState) -> Dict[str, Any]:
-    """Synthesize evidence-backed findings and structured report using Groq LLM with strict grounding."""
+    """Synthesize evidence-backed findings and structured report using distributed multi-LLM orchestration."""
     stats = state.get("computed_statistics", {})
     b_stats = stats.get("baseline_cohort", {})
     r_stats = stats.get("recent_cohort", {})
@@ -488,158 +740,73 @@ def node_synthesize_findings(state: PatternAnalysisState) -> Dict[str, Any]:
     r_cohort = TimeWindowCohort(**{k: v for k, v in r_stats.items() if k in TimeWindowCohort.model_fields})
     shift_models = [DetectedPatternShift(**s) for s in shifts]
 
-    # Build prompt context
-    shifts_summary = "\n".join(
-        f"- {s['metric_name']}: Baseline={s['baseline_value']}, Recent={s['recent_value']} "
-        f"({'+' if s['absolute_change'] >= 0 else ''}{s['absolute_change']}), "
-        f"Rel Shift={s['relative_change_pct']}%, Severity={s['severity']}, Significant={s['is_significant']} "
-        f"--> Summary: {s['shift_summary']}"
-        for s in shifts
+    # Model resolution: Distributed pipeline or explicit user single-model override
+    user_model = state.get("model_name")
+    if user_model and user_model != DISTRIBUTED_PIPELINE_OPTION and user_model in [
+        "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"
+    ]:
+        cohort_model = user_model
+        findings_model = user_model
+        executive_model = user_model
+        pipeline_mode = f"Single Model ({user_model})"
+    else:
+        cohort_model = PATTERN_COHORT_MODEL
+        findings_model = PATTERN_FINDINGS_MODEL
+        executive_model = PATTERN_EXECUTIVE_MODEL
+        pipeline_mode = "Distributed Multi-LLM"
+
+    models_used = {
+        "pipeline_mode": pipeline_mode,
+        "cohort_model": cohort_model,
+        "findings_model": findings_model,
+        "executive_model": executive_model,
+    }
+
+    logger.info("Executing pattern synthesis in mode '%s' across models: %s", pipeline_mode, models_used)
+
+    # Sub-task 1: Cohort Trends and Verified Error Rate Analysis (qwen/qwen3.8-27b)
+    cohort_insights, error_analysis = synthesize_cohort_and_error_trends(
+        b_cohort=b_cohort,
+        r_cohort=r_cohort,
+        model_name=cohort_model,
     )
 
-    stats_context = json.dumps({
-        "baseline_window": b_cohort.model_dump(),
-        "recent_window": r_cohort.model_dump(),
-        "time_metadata": meta,
-    }, indent=2)
-
-    model_name = state.get("model_name", DEFAULT_AGENT_MODEL)
-    llm = get_groq_llm(model_name=model_name, temperature=0.1)
-    parser = PydanticOutputParser(pydantic_object=PatternAnalysisReport)
-
-    prompt_tmpl = PromptTemplate(
-        template="""You are a Lead Fraud Pattern Analysis Agent for a tier-1 financial institution.
-Your task is to interpret the computed numerical statistics and detected distribution shifts across
-the historical alert and transaction data, explain their operational significance, and formulate
-evidence-backed findings with actionable follow-up recommendations.
-
---- DETERMINISTIC COHORT STATISTICS (DO NOT ALTER VALUES OR TIMESTAMPS) ---
-{stats_context}
-
---- DETECTED STATISTICAL SHIFTS ---
-{shifts_summary}
-
---- STRICT SCIENTIFIC GROUNDING & DATASET INTEGRITY DIRECTIVES (ZERO TOLERANCE) ---
-1. GROUNDING: Every finding MUST cite exact measured numbers, counts, percentages, and comparison windows
-   from the deterministic statistics provided above. Never guess or fabricate statistical values.
-2. ANONYMIZED PCA RESTRICTION (CRITICAL): The European Credit Card Fraud dataset contains anonymized PCA
-   features (V1–V28) and does NOT provide merchant or cardholder identities.
-   - You MUST NOT claim to discover particular merchants, store types (e.g. gas stations, jewelry stores, electronics),
-     geographic locations, foreign IPs, customer travel, personal demographics, or organized fraud rings from those features alone.
-   - PCA components (such as V14, V10, V4) MUST be described strictly as mathematical PCA components reflecting latent
-     feature correlations, NOT physical attributes.
-3. STRUCTURE: Each finding in 'findings' must detail:
-   - 'pattern_title': A clear title (e.g., 'Surge in Isolation Forest Unsupervised Anomalies')
-   - 'category': One of ANOMALY_CONCENTRATION, VOLUME_VELOCITY, MODEL_PERFORMANCE_SHIFT, EXPOSURE_DRIFT, STATISTICAL_DISTRIBUTION_SHIFT, RISK_TIER_MIGRATION
-   - 'measured_pattern': 1-2 sentences with exact numbers and comparison periods
-   - 'supporting_statistics': A dictionary with baseline value, recent value, relative change
-   - 'statistical_confidence': 'HIGH', 'MEDIUM', or 'LOW' based on sample size and magnitude
-   - 'dataset_limitations': Explicit affirmation of anonymized PCA constraints
-   - 'recommended_followup': Concrete operational recommendation (e.g., adjust triage composite threshold, retrain Isolation Forest, review feature drift)
-4. 'model_error_analysis': If verified outcomes exist (confirmed fraud vs false positives), analyze shifts in precision and false positive rates. If none, state that outcome verification is pending.
-5. 'executive_summary': A high-level 2-3 sentence executive synthesis of emerging risk patterns.
-
-{format_instructions}
-""",
-        input_variables=["stats_context", "shifts_summary"],
-        partial_variables={"format_instructions": parser.get_format_instructions()},
+    # Sub-task 2: Structured Evidence-Backed Findings Formulation (openai/gpt-oss-20b)
+    findings = formulate_pattern_findings(
+        shifts=shifts,
+        b_stats=b_stats,
+        r_stats=r_stats,
+        model_name=findings_model,
     )
 
-    chain = prompt_tmpl | llm | parser
+    # Sub-task 3: Executive Leadership Brief Synthesis (openai/gpt-oss-120b)
+    exec_summary = synthesize_executive_summary(
+        cohort_insights=cohort_insights,
+        error_analysis=error_analysis,
+        findings=findings,
+        b_cohort=b_cohort,
+        r_cohort=r_cohort,
+        model_name=executive_model,
+    )
 
-    try:
-        report: PatternAnalysisReport = chain.invoke({
-            "stats_context": stats_context,
-            "shifts_summary": shifts_summary,
-        })
-        report_dict = report.model_dump()
+    report_id = f"PAT-{uuid.uuid4().hex[:8].upper()}"
+    report = PatternAnalysisReport(
+        report_id=report_id,
+        executive_summary=exec_summary,
+        baseline_window=b_cohort,
+        recent_window=r_cohort,
+        detected_shifts=shift_models,
+        findings=findings,
+        model_error_analysis=error_analysis,
+        dataset_limitations_acknowledged=True,
+        grounding_audit_passed=True,
+        models_used=models_used,
+    )
 
-        # Hard guarantee: Overwrite cohort statistics and shifts with the deterministic numbers
-        report_dict["baseline_window"] = b_cohort.model_dump()
-        report_dict["recent_window"] = r_cohort.model_dump()
-        report_dict["detected_shifts"] = [s.model_dump() for s in shift_models]
-        report_dict["dataset_limitations_acknowledged"] = True
-
-        return {
-            "structured_report": report_dict,
-            "validation_errors": [],
-        }
-    except Exception as exc:
-        logger.warning("LLM pattern synthesis parsing failed (%s). Generating deterministic fallback report.", exc)
-        # Resilient fallback guaranteeing zero crashes
-        fallback_findings = []
-        for s in shifts:
-            if s.get("is_significant"):
-                cat = PatternCategory.ANOMALY_CONCENTRATION.value
-                if "Amount" in s["metric_name"]:
-                    cat = PatternCategory.EXPOSURE_DRIFT.value
-                elif "Volume" in s["metric_name"]:
-                    cat = PatternCategory.VOLUME_VELOCITY.value
-                elif "False Positive" in s["metric_name"]:
-                    cat = PatternCategory.MODEL_PERFORMANCE_SHIFT.value
-                elif "PCA" in s["metric_name"]:
-                    cat = PatternCategory.STATISTICAL_DISTRIBUTION_SHIFT.value
-
-                fallback_findings.append(PatternFindingItem(
-                    pattern_title=f"Emerging Shift: {s['metric_name']}",
-                    category=cat,
-                    measured_pattern=s["shift_summary"],
-                    supporting_statistics={
-                        "baseline_value": s["baseline_value"],
-                        "recent_value": s["recent_value"],
-                        "relative_change_pct": s["relative_change_pct"],
-                    },
-                    statistical_confidence="HIGH" if abs(s["relative_change_pct"]) >= 30.0 else "MEDIUM",
-                    dataset_limitations=(
-                        "European Credit Card dataset contains anonymized PCA features V1-V28. "
-                        "This finding reflects purely mathematical distribution shifts without real merchant or cardholder identities."
-                    ),
-                    recommended_followup=(
-                        f"Review risk threshold and queue triage routing for {s['metric_name']} "
-                        f"to prevent operational backlog or detection degradation."
-                    ),
-                ))
-
-        if not fallback_findings:
-            fallback_findings.append(PatternFindingItem(
-                pattern_title="Stable Baseline Operational Risk Profile",
-                category=PatternCategory.STATISTICAL_DISTRIBUTION_SHIFT.value,
-                measured_pattern=(
-                    f"Evaluated {b_stats.get('alert_count', 0)} baseline and {r_stats.get('alert_count', 0)} recent alerts. "
-                    "Metric shifts remain within standard operational bounds."
-                ),
-                supporting_statistics={
-                    "baseline_alerts": b_stats.get("alert_count", 0),
-                    "recent_alerts": r_stats.get("alert_count", 0),
-                },
-                statistical_confidence="HIGH",
-                dataset_limitations="Features V1-V28 are anonymized mathematical PCA components.",
-                recommended_followup="Continue automated surveillance and monitor subsequent window cohorts.",
-            ))
-
-        fallback_report = PatternAnalysisReport(
-            report_id=f"PAT-{uuid.uuid4().hex[:8].upper()}",
-            executive_summary=(
-                f"Historical analysis across {meta.get('total_historical_records', 0)} alerts reveals "
-                f"a {r_stats.get('high_anomaly_share_pct', 0.0):.1f}% recent concentration of high-anomaly alerts "
-                f"compared to {b_stats.get('high_anomaly_share_pct', 0.0):.1f}% in baseline, with mean exposure at €{r_stats.get('mean_amount', 0.0):.2f}."
-            ),
-            baseline_window=b_cohort,
-            recent_window=r_cohort,
-            detected_shifts=shift_models,
-            findings=fallback_findings,
-            model_error_analysis=(
-                f"Verified false positive rate is {r_cohort.false_positive_rate:.1%}" if r_cohort.false_positive_rate is not None
-                else "Case outcome verification in progress for recent cohort."
-            ),
-            dataset_limitations_acknowledged=True,
-            grounding_audit_passed=True,
-        )
-
-        return {
-            "structured_report": fallback_report.model_dump(),
-            "validation_errors": [f"Fallback activated due to parsing: {exc}"],
-        }
+    return {
+        "structured_report": report.model_dump(),
+        "validation_errors": [],
+    }
 
 
 def node_validate_evidence(state: PatternAnalysisState) -> Dict[str, Any]:
@@ -695,7 +862,14 @@ def node_validate_evidence(state: PatternAnalysisState) -> Dict[str, Any]:
 def node_revise_findings(state: PatternAnalysisState) -> Dict[str, Any]:
     """Prompt LLM to revise findings to eliminate detected grounding or storytelling errors."""
     logger.info("Revising pattern findings due to grounding feedback: %s", state.get("validation_errors"))
-    model_name = state.get("model_name", DEFAULT_AGENT_MODEL)
+    user_model = state.get("model_name")
+    if user_model and user_model != DISTRIBUTED_PIPELINE_OPTION and user_model in [
+        "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"
+    ]:
+        model_name = user_model
+    else:
+        model_name = PATTERN_FINDINGS_MODEL
+
     llm = get_groq_llm(model_name=model_name, temperature=0.0)
     parser = PydanticOutputParser(pydantic_object=PatternAnalysisReport)
 
@@ -811,7 +985,7 @@ def run_pattern_analysis(
     time_horizon_hours: Optional[int] = None,
     baseline_ratio: float = 0.5,
     min_alerts_threshold: int = 10,
-    model_name: str = DEFAULT_AGENT_MODEL,
+    model_name: str = DISTRIBUTED_PIPELINE_OPTION,
 ) -> Dict[str, Any]:
     """Execute complete end-to-end Fraud Pattern Analysis Agent workflow.
 

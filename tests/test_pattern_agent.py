@@ -14,20 +14,31 @@ from typing import Any, Dict, List
 import pytest
 from fastapi.testclient import TestClient
 
-from src.agents.config import DEFAULT_AGENT_MODEL, SUPPORTED_MODELS
+from src.agents.config import (
+    DEFAULT_AGENT_MODEL,
+    DISTRIBUTED_PIPELINE_OPTION,
+    PATTERN_COHORT_MODEL,
+    PATTERN_EXECUTIVE_MODEL,
+    PATTERN_FINDINGS_MODEL,
+    SUPPORTED_MODELS,
+)
 from src.agents.evaluator import evaluate_pattern_grounding
 from src.agents.pattern_agent import (
     PROHIBITED_DOMAIN_PATTERNS,
     build_pattern_analysis_graph,
     compute_cohort_statistics,
     detect_statistical_shifts,
+    formulate_pattern_findings,
     get_pattern_analysis_graph,
     node_compute_pattern_statistics,
     node_detect_anomalous_trends,
     node_gather_historical_data,
     node_publish_analysis_report,
+    node_synthesize_findings,
     node_validate_evidence,
     run_pattern_analysis,
+    synthesize_cohort_and_error_trends,
+    synthesize_executive_summary,
 )
 from src.agents.schemas import (
     DetectedPatternShift,
@@ -418,6 +429,43 @@ def test_run_pattern_analysis_end_to_end():
     assert "findings" in report
     assert len(report["findings"]) >= 1
     assert report.get("dataset_limitations_acknowledged") is True
+    assert "models_used" in report
+    assert report["models_used"]["pipeline_mode"] == "Distributed Multi-LLM"
+    assert report["models_used"]["cohort_model"] == PATTERN_COHORT_MODEL
+    assert report["models_used"]["findings_model"] == PATTERN_FINDINGS_MODEL
+    assert report["models_used"]["executive_model"] == PATTERN_EXECUTIVE_MODEL
+
+
+def test_distributed_multi_llm_subtasks(sample_historical_records: List[Dict[str, Any]]):
+    """Verify modular distributed sub-task execution with specialized model assignments."""
+    b_stats = compute_cohort_statistics(sample_historical_records[:10], window_name="Baseline")
+    r_stats = compute_cohort_statistics(sample_historical_records[10:], window_name="Recent")
+    b_cohort = TimeWindowCohort(**{k: v for k, v in b_stats.items() if k in TimeWindowCohort.model_fields})
+    r_cohort = TimeWindowCohort(**{k: v for k, v in r_stats.items() if k in TimeWindowCohort.model_fields})
+    shifts = detect_statistical_shifts(baseline=b_stats, recent=r_stats)
+
+    # 1. Sub-task 1: Cohort Trends and Verified Error Rate Analysis
+    insights, error_analysis = synthesize_cohort_and_error_trends(b_cohort, r_cohort, model_name=PATTERN_COHORT_MODEL)
+    assert len(insights) > 10
+    assert len(error_analysis) > 10
+
+    # 2. Sub-task 2: Structured Pattern Findings Formulation
+    findings = formulate_pattern_findings(shifts, b_stats, r_stats, model_name=PATTERN_FINDINGS_MODEL)
+    assert len(findings) >= 1
+    assert all(isinstance(f, PatternFindingItem) for f in findings)
+    assert all("V1-V28" in f.dataset_limitations or "PCA" in f.dataset_limitations for f in findings)
+
+    # 3. Sub-task 3: Executive Leadership Brief Synthesis
+    exec_summary = synthesize_executive_summary(
+        cohort_insights=insights,
+        error_analysis=error_analysis,
+        findings=findings,
+        b_cohort=b_cohort,
+        r_cohort=r_cohort,
+        model_name=PATTERN_EXECUTIVE_MODEL,
+    )
+    assert len(exec_summary) >= 25
+
 
 
 # =============================================================================
